@@ -1,0 +1,6 @@
+{
+  "name": "Document Search",
+  "description": "Document Search app by owner Amit Meena featuring document scanning, OCR text search, and multi-page export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
