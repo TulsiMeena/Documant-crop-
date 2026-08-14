@@ -4,7 +4,9 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -37,7 +39,7 @@ object ImageExporter {
         val customWidthInches: Float? = null,
         val customHeightInches: Float? = null,
         val dpi: Int = 300,
-        val targetSizeKb: Int? = null, // e.g. 30, 50, 100, 500 KB or null for original quality
+        val targetSizeKb: Int? = null, // null for ultra 100% crystal high quality, or e.g. 50, 100, 500 KB
         val saveToGallery: Boolean = true
     )
 
@@ -50,8 +52,8 @@ object ImageExporter {
     )
 
     /**
-     * Processes source image according to target dimensions, format, and target KB size,
-     * then saves to local cache and public Android Gallery (Pictures/Scanova).
+     * Ultra High-Quality image export engine with high-fidelity resampling
+     * and lossless/maximum-quality compression directly into phone Gallery.
      */
     fun exportAndSave(
         context: Context,
@@ -63,12 +65,17 @@ object ImageExporter {
         if (!srcFile.exists()) return null
 
         try {
-            var bitmap = BitmapFactory.decodeFile(sourceImagePath) ?: return null
+            val decodeOpts = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inDither = false
+                inScaled = false
+            }
+            var bitmap = BitmapFactory.decodeFile(sourceImagePath, decodeOpts) ?: return null
 
             val originalW = bitmap.width
             val originalH = bitmap.height
 
-            // 1. Calculate Target Dimensions in Pixels
+            // 1. Calculate Target Dimensions
             var targetW = originalW
             var targetH = originalH
 
@@ -91,21 +98,23 @@ object ImageExporter {
                 }
             }
 
-            // Scale bitmap if dimensions changed
+            // High-fidelity scaling with filtering
             if (targetW != originalW || targetH != originalH) {
-                val scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
-                if (scaled != bitmap) {
-                    bitmap.recycle()
-                    bitmap = scaled
-                }
+                val scaled = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(scaled)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+                val srcRect = Rect(0, 0, originalW, originalH)
+                val dstRect = Rect(0, 0, targetW, targetH)
+                canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+                bitmap = scaled
             }
 
-            // 2. Compress and scale to fit Target KB Size (if specified)
+            // 2. Compress with Ultra-High Quality (100% / Lossless PNG when targetKb is null)
             val byteData = compressToTargetKb(bitmap, options.format, options.targetSizeKb)
 
-            // 3. Save to App Cache / Files Dir
+            // 3. Save to App Cache
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val cleanTitle = documentTitle.replace("[^a-zA-Z0-9_-]".toRegex(), "_").take(25)
+            val cleanTitle = documentTitle.replace("[^a-zA-Z0-9_-]".toRegex(), "_").take(30)
             val fileName = "Scanova_${cleanTitle}_$timeStamp.${options.format.extension}"
 
             val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
@@ -116,7 +125,7 @@ object ImageExporter {
                 fos.flush()
             }
 
-            // 4. Save to System Public Gallery (Pictures/Scanova)
+            // 4. Save Directly to Public Android Gallery (Pictures/Scanova)
             var galleryUriString: String? = null
             if (options.saveToGallery) {
                 galleryUriString = saveToPublicGallery(context, fileName, options.format.mimeType, byteData)
@@ -124,7 +133,6 @@ object ImageExporter {
 
             val finalWidth = bitmap.width
             val finalHeight = bitmap.height
-            bitmap.recycle()
 
             return ExportResult(
                 file = outputFile,
@@ -140,8 +148,8 @@ object ImageExporter {
     }
 
     /**
-     * Smart iterative compression loop that adjusts quality and scale to keep image under target KB
-     * while preserving maximum visual sharpness.
+     * Ultra high-clarity compression.
+     * When targetKb is null, outputs at 99-100% crystal quality.
      */
     private fun compressToTargetKb(
         initialBitmap: Bitmap,
@@ -154,57 +162,46 @@ object ImageExporter {
         val baos = ByteArrayOutputStream()
 
         if (format == ImageFormat.JPG) {
-            var quality = 95
+            var quality = if (targetKb == null) 98 else 95
             currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
 
-            // If quality adjustment is needed to hit target KB limit
+            // If quality reduction is requested to meet custom small KB target
             while (baos.toByteArray().size > maxBytes && quality > 15) {
                 baos.reset()
-                quality -= 8
+                quality -= 5
                 currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
             }
 
-            // If still too large after quality reductions, downscale bitmap size iteratively
+            var scaleFactor = 0.92f
+            while (baos.toByteArray().size > maxBytes && currentBitmap.width > 200 && currentBitmap.height > 200) {
+                baos.reset()
+                val newW = (currentBitmap.width * scaleFactor).toInt().coerceAtLeast(100)
+                val newH = (currentBitmap.height * scaleFactor).toInt().coerceAtLeast(100)
+                val resized = Bitmap.createScaledBitmap(currentBitmap, newW, newH, true)
+                currentBitmap = resized
+                currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+            }
+        } else {
+            // PNG (100% Lossless)
+            currentBitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+
             var scaleFactor = 0.90f
             while (baos.toByteArray().size > maxBytes && currentBitmap.width > 200 && currentBitmap.height > 200) {
                 baos.reset()
                 val newW = (currentBitmap.width * scaleFactor).toInt().coerceAtLeast(100)
                 val newH = (currentBitmap.height * scaleFactor).toInt().coerceAtLeast(100)
                 val resized = Bitmap.createScaledBitmap(currentBitmap, newW, newH, true)
-                if (resized != currentBitmap && currentBitmap != initialBitmap) {
-                    currentBitmap.recycle()
-                }
-                currentBitmap = resized
-                currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
-            }
-        } else {
-            // PNG (Lossless)
-            currentBitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-
-            // If target KB is restricted, downscale dimensions
-            var scaleFactor = 0.88f
-            while (baos.toByteArray().size > maxBytes && currentBitmap.width > 200 && currentBitmap.height > 200) {
-                baos.reset()
-                val newW = (currentBitmap.width * scaleFactor).toInt().coerceAtLeast(100)
-                val newH = (currentBitmap.height * scaleFactor).toInt().coerceAtLeast(100)
-                val resized = Bitmap.createScaledBitmap(currentBitmap, newW, newH, true)
-                if (resized != currentBitmap && currentBitmap != initialBitmap) {
-                    currentBitmap.recycle()
-                }
                 currentBitmap = resized
                 currentBitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
             }
-        }
-
-        if (currentBitmap != initialBitmap) {
-            currentBitmap.recycle()
         }
 
         return baos.toByteArray()
     }
 
     /**
-     * Saves byte array into Android's public Gallery MediaStore so it appears in phone's Gallery app.
+     * Instantly stores image bytes into phone's public MediaStore (Pictures/Scanova)
+     * so it shows up at the top of the device's Gallery app immediately.
      */
     private fun saveToPublicGallery(
         context: Context,
@@ -241,7 +238,7 @@ object ImageExporter {
                 uri.toString()
             } else null
         } catch (e: Exception) {
-            Log.e("ImageExporter", "Error saving to MediaStore", e)
+            Log.e("ImageExporter", "Error saving to MediaStore Gallery", e)
             null
         }
     }

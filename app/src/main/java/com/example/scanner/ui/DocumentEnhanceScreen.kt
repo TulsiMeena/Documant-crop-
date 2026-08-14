@@ -659,10 +659,6 @@ fun DocumentEnhanceScreen(
                                             enhancedFullRes.compress(Bitmap.CompressFormat.JPEG, 92, fos)
                                             fos.flush()
                                             fos.close()
-                                            if (fullBmp != fullResSourceBitmap) {
-                                                fullBmp.recycle()
-                                            }
-                                            enhancedFullRes.recycle()
 
                                             withContext(Dispatchers.Main) {
                                                 onContinue(outFile.absolutePath)

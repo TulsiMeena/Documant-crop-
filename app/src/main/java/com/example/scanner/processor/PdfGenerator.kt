@@ -123,11 +123,6 @@ object PdfGenerator {
             canvas.drawBitmap(bitmap, null, destRect, paint)
 
             pdfDocument.finishPage(pdfPage)
-
-            if (bitmap != sourceBitmap) {
-                bitmap.recycle()
-            }
-            sourceBitmap.recycle()
         }
 
         // 4. Write PDF Stream
@@ -159,7 +154,6 @@ object PdfGenerator {
         thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos)
         fos.flush()
         fos.close()
-        thumbBitmap.recycle()
         return thumbFile
     }
 

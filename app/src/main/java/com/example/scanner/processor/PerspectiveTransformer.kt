@@ -1,9 +1,11 @@
 package com.example.scanner.processor
 
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Shader
 import com.example.scanner.model.DocumentQuad
 import kotlin.math.hypot
 import kotlin.math.max
@@ -14,10 +16,6 @@ object PerspectiveTransformer {
     /**
      * Warps a quadrilateral region of [sourceBitmap] defined by normalized [quad]
      * into a straight, perspective-corrected rectangular [Bitmap].
-     *
-     * @param sourceBitmap The raw input document bitmap (Camera or Gallery)
-     * @param quad Document four corners in normalized 0.0..1.0 coordinates
-     * @param rotationDegrees Optional additional 90, 180, or 270 degree rotation
      */
     fun transform(
         sourceBitmap: Bitmap,
@@ -78,20 +76,24 @@ object PerspectiveTransformer {
         val matrix = Matrix()
         matrix.setPolyToPoly(srcPoints, 0, dstPoints, 0, 4)
 
-        // 4. Render Warped Perspective onto target Bitmap Canvas
+        // 4. Render Warped Perspective onto target Bitmap Canvas using Shader for pristine accuracy
         val outputBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outputBitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
 
-        canvas.drawBitmap(sourceBitmap, matrix, paint)
+        val invMatrix = Matrix()
+        if (matrix.invert(invMatrix)) {
+            val shader = BitmapShader(sourceBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            shader.setLocalMatrix(invMatrix)
+            paint.shader = shader
+            canvas.drawRect(0f, 0f, targetW.toFloat(), targetH.toFloat(), paint)
+        } else {
+            canvas.drawBitmap(sourceBitmap, matrix, paint)
+        }
 
         // 5. Apply Rotation if specified
         return if (rotationDegrees % 360 != 0) {
-            val rotatedBitmap = rotateBitmap(outputBitmap, rotationDegrees)
-            if (rotatedBitmap != outputBitmap) {
-                outputBitmap.recycle()
-            }
-            rotatedBitmap
+            rotateBitmap(outputBitmap, rotationDegrees)
         } else {
             outputBitmap
         }

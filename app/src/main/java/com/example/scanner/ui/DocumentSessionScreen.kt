@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material3.AlertDialog
@@ -74,6 +75,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.local.entity.ScannedDocumentEntity
 import com.example.scanner.DocumentSessionViewModel
 import com.example.scanner.model.ScannedPage
+import com.example.ui.components.ExportImageDialog
 import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import java.io.File
@@ -103,6 +105,7 @@ fun DocumentSessionScreen(
     var pdfTitleInput by remember { mutableStateOf("") }
     var selectedPageSize by remember { mutableStateOf("Auto") }
     var pdfErrorMessage by remember { mutableStateOf<String?>(null) }
+    var pageToExport by remember { mutableStateOf<ScannedPage?>(null) }
 
     Surface(
         modifier = modifier
@@ -527,6 +530,25 @@ fun DocumentSessionScreen(
 
                         IconButton(
                             onClick = {
+                                pageToExport = page
+                            }
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Save to Gallery",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Save HD",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
                                 pageToPreview = null
                                 if (pages.size == 1) {
                                     pageToDelete = page
@@ -675,6 +697,15 @@ fun DocumentSessionScreen(
                     Text(text = "Back")
                 }
             }
+        )
+    }
+
+    if (pageToExport != null) {
+        val page = pageToExport!!
+        ExportImageDialog(
+            sourceImagePath = page.enhancedImagePath,
+            documentTitle = "Document_Page_${page.pageOrder}",
+            onDismiss = { pageToExport = null }
         )
     }
 }

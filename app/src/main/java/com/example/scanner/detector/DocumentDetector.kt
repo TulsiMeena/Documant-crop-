@@ -199,10 +199,10 @@ class DocumentDetector {
     private fun mapRotation(quad: DocumentQuad, rotationDegrees: Int): DocumentQuad {
         return when (rotationDegrees) {
             90 -> DocumentQuad(
-                topLeft = PointF(1f - quad.topLeft.y, quad.topLeft.x),
-                topRight = PointF(1f - quad.bottomLeft.y, quad.bottomLeft.x),
-                bottomRight = PointF(1f - quad.bottomRight.y, quad.bottomRight.x),
-                bottomLeft = PointF(1f - quad.topRight.y, quad.topRight.x)
+                topLeft = PointF(1f - quad.bottomLeft.y, quad.bottomLeft.x),
+                topRight = PointF(1f - quad.topLeft.y, quad.topLeft.x),
+                bottomRight = PointF(1f - quad.topRight.y, quad.topRight.x),
+                bottomLeft = PointF(1f - quad.bottomRight.y, quad.bottomRight.x)
             )
             180 -> DocumentQuad(
                 topLeft = PointF(1f - quad.bottomRight.x, 1f - quad.bottomRight.y),
@@ -211,10 +211,10 @@ class DocumentDetector {
                 bottomLeft = PointF(1f - quad.topRight.x, 1f - quad.topRight.y)
             )
             270 -> DocumentQuad(
-                topLeft = PointF(quad.topLeft.y, 1f - quad.topLeft.x),
-                topRight = PointF(quad.topRight.y, 1f - quad.topRight.x),
-                bottomRight = PointF(quad.bottomRight.y, 1f - quad.bottomRight.x),
-                bottomLeft = PointF(quad.bottomLeft.y, 1f - quad.bottomLeft.x)
+                topLeft = PointF(quad.topRight.y, 1f - quad.topRight.x),
+                topRight = PointF(quad.bottomRight.y, 1f - quad.bottomRight.x),
+                bottomRight = PointF(quad.bottomLeft.y, 1f - quad.bottomLeft.x),
+                bottomLeft = PointF(quad.topLeft.y, 1f - quad.topLeft.x)
             )
             else -> quad
         }

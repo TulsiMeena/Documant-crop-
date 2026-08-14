@@ -196,9 +196,7 @@ fun CameraScannerScreen(
                 if (cachedFile != null) {
                     val bitmap = BitmapFactory.decodeFile(cachedFile.absolutePath)
                     val quad = if (bitmap != null) {
-                        val detected = BitmapDocumentDetector.detectCorners(bitmap)
-                        bitmap.recycle()
-                        detected
+                        BitmapDocumentDetector.detectCorners(bitmap)
                     } else null
                     onImageCaptured(cachedFile.absolutePath, quad)
                 }
