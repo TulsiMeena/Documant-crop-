@@ -121,15 +121,19 @@ fun DocumentEnhanceScreen(
                 if (fullBmp != null) {
                     fullResSourceBitmap = fullBmp
 
-                    // Downsample to max 800px dimension for high performance live preview
-                    val targetDim = 800
+                    // Maintain high-resolution preview (up to 2048px) for crisp display on high-DPI screens
+                    val targetDim = 2048
                     val maxDim = max(fullBmp.width, fullBmp.height)
                     val scale = if (maxDim > targetDim) targetDim.toFloat() / maxDim else 1.0f
 
                     val previewW = max(100, (fullBmp.width * scale).toInt())
                     val previewH = max(100, (fullBmp.height * scale).toInt())
 
-                    val scaledBmp = Bitmap.createScaledBitmap(fullBmp, previewW, previewH, true)
+                    val scaledBmp = if (scale < 1.0f) {
+                        Bitmap.createScaledBitmap(fullBmp, previewW, previewH, true)
+                    } else {
+                        fullBmp
+                    }
                     previewSourceBitmap = scaledBmp
 
                     // Run initial AUTO enhancement on preview bitmap
@@ -656,7 +660,7 @@ fun DocumentEnhanceScreen(
                                                 "ENHANCED_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
                                             )
                                             val fos = FileOutputStream(outFile)
-                                            enhancedFullRes.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                                            enhancedFullRes.compress(Bitmap.CompressFormat.JPEG, 100, fos)
                                             fos.flush()
                                             fos.close()
 

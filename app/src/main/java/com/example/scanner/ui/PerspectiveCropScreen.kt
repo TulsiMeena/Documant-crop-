@@ -690,7 +690,7 @@ fun PerspectiveCropScreen(
                                                 "CORRECTED_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
                                             )
                                             val fos = FileOutputStream(outFile)
-                                            finalCorrected.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                                            finalCorrected.compress(Bitmap.CompressFormat.JPEG, 100, fos)
                                             fos.flush()
                                             fos.close()
 

@@ -162,7 +162,7 @@ object ImageExporter {
         val baos = ByteArrayOutputStream()
 
         if (format == ImageFormat.JPG) {
-            var quality = if (targetKb == null) 98 else 95
+            var quality = if (targetKb == null) 100 else 98
             currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
 
             // If quality reduction is requested to meet custom small KB target

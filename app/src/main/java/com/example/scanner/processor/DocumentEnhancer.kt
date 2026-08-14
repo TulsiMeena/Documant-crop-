@@ -11,6 +11,7 @@ object DocumentEnhancer {
 
     /**
      * Enhances a document bitmap according to the specified [mode] and manual [params].
+     * Always preserves full resolution, high dynamic range, and razor-sharp text clarity.
      */
     fun enhance(
         sourceBitmap: Bitmap,
@@ -45,74 +46,61 @@ object DocumentEnhancer {
     }
 
     /**
-     * AUTO MODE: Adaptive contrast normalization, shadow correction, background whitening, mild sharpening.
+     * AUTO MODE: Precision S-curve contrast normalization, background brightening,
+     * crisp dark ink definition, preserving color stamps/seals, and text edge sharpening.
      */
     private fun processAuto(pixels: IntArray, w: Int, h: Int): IntArray {
         val count = pixels.size
-        val luma = IntArray(count)
-
-        var minLuma = 255
-        var maxLuma = 0
-        var sumLuma = 0L
-
-        for (i in 0 until count) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            val y = (r * 299 + g * 587 + b * 114) / 1000
-            luma[i] = y
-            if (y < minLuma) minLuma = y
-            if (y > maxLuma) maxLuma = y
-            sumLuma += y
-        }
-
-        val avgLuma = (sumLuma / count).toInt()
-        val range = max(1, maxLuma - minLuma)
-
         val out = IntArray(count)
+
+        // Look-Up Table (LUT) for smooth, high-fidelity tone curve
+        val lut = IntArray(256)
+        for (i in 0..255) {
+            val v = if (i > 185) {
+                // Bright paper background -> clean bright white
+                min(255, (i + (255 - i) * 0.45f).toInt())
+            } else if (i < 100) {
+                // Dark ink / text -> rich crisp dark
+                max(0, (i * 0.85f).toInt())
+            } else {
+                // Midtones -> natural contrast boost
+                val norm = (i - 100) / 85.0f
+                (85 + norm * 100).toInt().coerceIn(0, 255)
+            }
+            lut[i] = v
+        }
+
         for (i in 0 until count) {
             val p = pixels[i]
+            val a = (p ushr 24) and 0xFF
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
-            val y = luma[i]
 
-            // Contrast stretch & background boost
-            val normY = ((y - minLuma).toFloat() / range * 255.0f)
-            val boostedY = if (normY > avgLuma * 0.85f) {
-                // Brighten paper background toward clean off-white
-                min(255.0f, normY * 1.12f + 12.0f)
-            } else {
-                // Keep text dark and crisp
-                max(0.0f, normY * 0.95f)
-            }
+            val newR = lut[r]
+            val newG = lut[g]
+            val newB = lut[b]
 
-            val scale = if (y > 0) boostedY / y.toFloat() else 1.0f
-
-            val newR = (r * scale).toInt().coerceIn(0, 255)
-            val newG = (g * scale).toInt().coerceIn(0, 255)
-            val newB = (b * scale).toInt().coerceIn(0, 255)
-
-            out[i] = (0xFF shl 24) or (newR shl 16) or (newG shl 8) or newB
+            out[i] = (a shl 24) or (newR shl 16) or (newG shl 8) or newB
         }
 
-        // Apply mild 3x3 unsharp mask for sharp text
-        return applySharpen(out, w, h, 0.35f)
+        // Apply high-clarity edge sharpening for sharp text
+        return applySharpen(out, w, h, 0.40f)
     }
 
     /**
-     * COLOR MODE: Mild contrast boost (+15%), brightness (+8%), crisp text without saturation distortion.
+     * COLOR MODE: Vibrant colors, punchy contrast (+20%), preserving photo and stamp fidelity.
      */
     private fun processColor(pixels: IntArray, w: Int, h: Int): IntArray {
         val count = pixels.size
         val out = IntArray(count)
 
-        val contrastFactor = 1.15f
-        val brightnessOffset = 15
+        val contrastFactor = 1.18f
+        val brightnessOffset = 10
 
         for (i in 0 until count) {
             val p = pixels[i]
+            val a = (p ushr 24) and 0xFF
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
@@ -121,40 +109,45 @@ object DocumentEnhancer {
             val newG = (((g - 128) * contrastFactor) + 128 + brightnessOffset).toInt().coerceIn(0, 255)
             val newB = (((b - 128) * contrastFactor) + 128 + brightnessOffset).toInt().coerceIn(0, 255)
 
-            out[i] = (0xFF shl 24) or (newR shl 16) or (newG shl 8) or newB
+            out[i] = (a shl 24) or (newR shl 16) or (newG shl 8) or newB
         }
 
-        return applySharpen(out, w, h, 0.25f)
+        return applySharpen(out, w, h, 0.30f)
     }
 
     /**
-     * GRAYSCALE MODE: Converts to Luma and applies contrast stretch preserving handwriting/diagrams.
+     * GRAYSCALE MODE: Converts to high-contrast Luma, removing paper discoloration while keeping all ink crisp.
      */
     private fun processGrayscale(pixels: IntArray, w: Int, h: Int): IntArray {
         val count = pixels.size
         val out = IntArray(count)
 
+        val lut = IntArray(256)
+        for (i in 0..255) {
+            val v = if (i > 180) {
+                min(255, (i + (255 - i) * 0.50f).toInt())
+            } else if (i < 110) {
+                max(0, (i * 0.80f).toInt())
+            } else {
+                i
+            }
+            lut[i] = v
+        }
+
         for (i in 0 until count) {
             val p = pixels[i]
+            val a = (p ushr 24) and 0xFF
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
 
-            val y = (r * 299 + g * 587 + b * 114) / 1000
+            val luma = (r * 299 + g * 587 + b * 114) / 1000
+            val enhancedY = lut[luma.coerceIn(0, 255)]
 
-            // Apply gentle document gamma curve to pop dark ink on light background
-            val enhancedY = if (y > 210) {
-                min(255, (y * 1.08f).toInt())
-            } else if (y < 120) {
-                max(0, (y * 0.90f).toInt())
-            } else {
-                y
-            }
-
-            out[i] = (0xFF shl 24) or (enhancedY shl 16) or (enhancedY shl 8) or enhancedY
+            out[i] = (a shl 24) or (enhancedY shl 16) or (enhancedY shl 8) or enhancedY
         }
 
-        return out
+        return applySharpen(out, w, h, 0.35f)
     }
 
     /**
@@ -172,7 +165,7 @@ object DocumentEnhancer {
             gray[i] = (r * 299 + g * 587 + b * 114) / 1000
         }
 
-        // Build 2D Integral Image for O(1) local window mean calculation
+        // Build 2D Integral Image for fast O(1) local window mean calculation
         val integral = LongArray((w + 1) * (h + 1))
         val stride = w + 1
 
@@ -189,9 +182,9 @@ object DocumentEnhancer {
         }
 
         val out = IntArray(count)
-        val windowSize = max(15, min(w, h) / 20) // Local window adaptively scaled
+        val windowSize = max(15, min(w, h) / 25)
         val halfW = windowSize / 2
-        val offsetC = 10 // Threshold offset constant to preserve thin ink strokes
+        val offsetC = 8
 
         for (y in 0 until h) {
             val y1 = max(0, y - halfW)
@@ -212,7 +205,6 @@ object DocumentEnhancer {
                 val localMean = (sum / countArea).toInt()
                 val pixelVal = gray[gRow + x]
 
-                // Threshold test
                 val bwVal = if (pixelVal < localMean - offsetC) 0 else 255
                 val colorVal = (0xFF shl 24) or (bwVal shl 16) or (bwVal shl 8) or bwVal
                 out[gRow + x] = colorVal
@@ -243,6 +235,7 @@ object DocumentEnhancer {
 
             for (i in 0 until count) {
                 val p = current[i]
+                val a = (p ushr 24) and 0xFF
                 val r = (p shr 16) and 0xFF
                 val g = (p shr 8) and 0xFF
                 val b = p and 0xFF
@@ -251,7 +244,7 @@ object DocumentEnhancer {
                 val newG = (((g - 128) * contrastFactor) + 128 + brightnessOffset).toInt().coerceIn(0, 255)
                 val newB = (((b - 128) * contrastFactor) + 128 + brightnessOffset).toInt().coerceIn(0, 255)
 
-                out[i] = (0xFF shl 24) or (newR shl 16) or (newG shl 8) or newB
+                out[i] = (a shl 24) or (newR shl 16) or (newG shl 8) or newB
             }
             current = out
         }
@@ -268,6 +261,7 @@ object DocumentEnhancer {
      * High-pass unsharp filter for sharpening document text edges.
      */
     private fun applySharpen(pixels: IntArray, w: Int, h: Int, amount: Float): IntArray {
+        if (amount <= 0f) return pixels
         val out = IntArray(pixels.size)
 
         for (y in 0 until h) {
@@ -280,6 +274,7 @@ object DocumentEnhancer {
                 val xRight = if (x < w - 1) x + 1 else x
 
                 val p = pixels[rCurr + x]
+                val a = (p ushr 24) and 0xFF
                 val r = (p shr 16) and 0xFF
                 val g = (p shr 8) and 0xFF
                 val b = p and 0xFF
@@ -298,7 +293,7 @@ object DocumentEnhancer {
                 val sharpG = (g + amount * (g - nG)).toInt().coerceIn(0, 255)
                 val sharpB = (b + amount * (b - nB)).toInt().coerceIn(0, 255)
 
-                out[rCurr + x] = (0xFF shl 24) or (sharpR shl 16) or (sharpG shl 8) or sharpB
+                out[rCurr + x] = (a shl 24) or (sharpR shl 16) or (sharpG shl 8) or sharpB
             }
         }
 

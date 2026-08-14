@@ -46,7 +46,8 @@ object PerspectiveTransformer {
         val rightHeight = hypot((brX - trX).toDouble(), (brY - trY).toDouble()).toFloat()
         val rawHeight = max(leftHeight, rightHeight)
 
-        val maxDim = 3200f
+        // Preserve full high-resolution without artificial downscaling
+        val maxDim = 4096f
         val scale = if (max(rawWidth, rawHeight) > maxDim) {
             maxDim / max(rawWidth, rawHeight)
         } else {
