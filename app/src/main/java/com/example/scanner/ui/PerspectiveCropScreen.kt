@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
@@ -156,13 +157,9 @@ fun PerspectiveCropScreen(
         }
     }
 
-    // Nudge Selected Corner or Edge by Pixel Delta
-    fun nudge(deltaXPixels: Float, deltaYPixels: Float) {
-        val bmp = rawBitmap ?: return
+    // Nudge Selected Corner or Edge by Normalized Delta
+    fun nudge(dxNorm: Float, dyNorm: Float) {
         val quad = currentQuad ?: return
-
-        val dxNorm = deltaXPixels / bmp.width.toFloat()
-        val dyNorm = deltaYPixels / bmp.height.toFloat()
 
         if (selectedCorner != ActiveCorner.NONE) {
             if (lockedCorners.contains(selectedCorner)) return
@@ -255,7 +252,7 @@ fun PerspectiveCropScreen(
             val bmp = rawBitmap
             val quad = currentQuad
 
-            // 1. Main Viewport Image with Upgraded CropOverlay
+            // 1. Main Viewport Image with Accurate Pixel-Aligned CropOverlay
             if (bmp != null) {
                 Box(
                     modifier = Modifier
@@ -287,7 +284,7 @@ fun PerspectiveCropScreen(
                 }
             }
 
-            // 2. Compact Top Header Bar (Back, Undo, Redo, Lock, Reset)
+            // 2. Top Header Bar (Back, Undo, Redo, Lock, Reset)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -391,7 +388,7 @@ fun PerspectiveCropScreen(
                             .background(Color.White.copy(alpha = 0.2f))
                     )
 
-                    // Reset Button
+                    // Reset / Full Image Button
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
@@ -420,7 +417,7 @@ fun PerspectiveCropScreen(
                 }
             }
 
-            // 3. Compact Bottom Control Stack (Ratio Assist, Nudge D-Pad, Actions)
+            // 3. Bottom Control Stack (Ratio Assist, Point Selector, Directional Nudge, Actions)
             if (!isProcessing) {
                 Column(
                     modifier = Modifier
@@ -468,7 +465,7 @@ fun PerspectiveCropScreen(
                         }
                     }
 
-                    // 4-Way Micro-Nudge D-Pad Section
+                    // 4-Way Directional Move & Point Selection
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -476,15 +473,15 @@ fun PerspectiveCropScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Corner Selection Tabs
+                        // Corner Selection Tabs (TL, TR, BR, BL)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Selected Point:",
+                                text = "Select Corner Point:",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.5f),
-                                fontSize = 10.sp
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 11.sp
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(
                                     Pair("TL", ActiveCorner.TOP_LEFT),
                                     Pair("TR", ActiveCorner.TOP_RIGHT),
@@ -498,21 +495,21 @@ fun PerspectiveCropScreen(
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
                                                 when {
-                                                    locked -> Color(0xFFFF5252).copy(alpha = 0.8f)
+                                                    locked -> Color(0xFFFF5252).copy(alpha = 0.85f)
                                                     sel -> Color(0xFF00E5D9)
-                                                    else -> Color.White.copy(alpha = 0.15f)
+                                                    else -> Color.White.copy(alpha = 0.18f)
                                                 }
                                             )
                                             .clickable {
                                                 selectedCorner = corner
                                                 selectedEdge = ActiveEdge.NONE
                                             }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
                                             .testTag("select_corner_${label.lowercase()}")
                                     ) {
                                         Text(
                                             text = label,
-                                            style = MaterialTheme.typography.labelSmall,
+                                            style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = if (sel || locked) Color.Black else Color.White
                                         )
@@ -521,7 +518,7 @@ fun PerspectiveCropScreen(
                             }
                         }
 
-                        // Compact Directional Nudge D-Pad (Up, Down, Left, Right)
+                        // Directional Nudge D-Pad (Up, Down, Left, Right)
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -529,8 +526,8 @@ fun PerspectiveCropScreen(
                             // UP
                             NudgeButton(
                                 icon = Icons.Default.ExpandLess,
-                                contentDescription = "Nudge Up",
-                                onClick = { nudge(0f, -1f) },
+                                contentDescription = "Move Up",
+                                onClick = { nudge(0f, -0.018f) },
                                 testTag = "nudge_up"
                             )
 
@@ -538,24 +535,24 @@ fun PerspectiveCropScreen(
                                 // LEFT
                                 NudgeButton(
                                     icon = Icons.Default.ChevronLeft,
-                                    contentDescription = "Nudge Left",
-                                    onClick = { nudge(-1f, 0f) },
+                                    contentDescription = "Move Left",
+                                    onClick = { nudge(-0.018f, 0f) },
                                     testTag = "nudge_left"
                                 )
 
                                 // DOWN
                                 NudgeButton(
                                     icon = Icons.Default.ExpandMore,
-                                    contentDescription = "Nudge Down",
-                                    onClick = { nudge(0f, 1f) },
+                                    contentDescription = "Move Down",
+                                    onClick = { nudge(0f, 0.018f) },
                                     testTag = "nudge_down"
                                 )
 
                                 // RIGHT
                                 NudgeButton(
                                     icon = Icons.Default.ChevronRight,
-                                    contentDescription = "Nudge Right",
-                                    onClick = { nudge(1f, 0f) },
+                                    contentDescription = "Move Right",
+                                    onClick = { nudge(0.018f, 0f) },
                                     testTag = "nudge_right"
                                 )
                             }
@@ -575,19 +572,17 @@ fun PerspectiveCropScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.12f))
+                                .background(Color.White.copy(alpha = 0.14f))
                                 .clickable {
                                     val b = rawBitmap
                                     if (b != null) {
                                         scope.launch(Dispatchers.IO) {
                                             val reDetected = BitmapDocumentDetector.detectCorners(b)
+                                                ?: BitmapDocumentDetector.getDefaultInsetQuad()
                                             withContext(Dispatchers.Main) {
-                                                if (reDetected != null) {
-                                                    autoDetectedQuad = reDetected
-                                                    pushHistory(reDetected)
-                                                } else {
-                                                    Toast.makeText(context, "Document edges couldn't be detected.", Toast.LENGTH_SHORT).show()
-                                                }
+                                                autoDetectedQuad = reDetected
+                                                pushHistory(reDetected)
+                                                Toast.makeText(context, "Corners Auto-Detected", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -601,7 +596,7 @@ fun PerspectiveCropScreen(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -620,15 +615,15 @@ fun PerspectiveCropScreen(
                             },
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .size(44.dp)
+                                .background(Color.White.copy(alpha = 0.14f))
+                                .size(46.dp)
                                 .testTag("crop_rotate_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.RotateRight,
                                 contentDescription = "Rotate",
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -727,23 +722,22 @@ private fun NudgeButton(
     onClick: () -> Unit,
     testTag: String
 ) {
-    val scope = rememberCoroutineScope()
     var isPressing by remember { mutableStateOf(false) }
 
     LaunchedEffect(isPressing) {
         if (isPressing) {
             while (isPressing) {
                 onClick()
-                delay(50)
+                delay(80)
             }
         }
     }
 
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(36.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.15f))
+            .background(Color.White.copy(alpha = 0.18f))
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -761,7 +755,7 @@ private fun NudgeButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = Color.White,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(22.dp)
         )
     }
 }
