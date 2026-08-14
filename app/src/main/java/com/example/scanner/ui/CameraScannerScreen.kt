@@ -5,10 +5,15 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,11 +25,15 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,14 +42,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.FlipCameraAndroid
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +64,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,13 +79,16 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.scanner.detector.DocumentDetector
 import com.example.scanner.detector.QuadSmoother
 import com.example.scanner.model.DetectionStatus
 import com.example.scanner.model.DocumentQuad
+import com.example.scanner.processor.BitmapDocumentDetector
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -121,15 +139,52 @@ fun CameraScannerScreen(
     var hasFlashUnit by remember { mutableStateOf(true) }
     var isAutoCaptureEnabled by remember { mutableStateOf(true) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var showGrid by remember { mutableStateOf(false) }
+    var scanMode by remember { mutableStateOf(ScanMode.DOCUMENT) }
 
     var detectedQuad by remember { mutableStateOf<DocumentQuad?>(null) }
     var detectionStatus by remember { mutableStateOf(DetectionStatus.LOOKING) }
     var isCapturing by remember { mutableStateOf(false) }
+    var showFlashEffect by remember { mutableStateOf(false) }
+    var batchCount by remember { mutableIntStateOf(0) }
+
+    // Tilt Level Sensor States
+    var tiltPitch by remember { mutableFloatStateOf(0f) }
+    var tiltRoll by remember { mutableFloatStateOf(0f) }
 
     val scope = rememberCoroutineScope()
     val detector = remember { DocumentDetector() }
     val smoother = remember { QuadSmoother() }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    // Register Accelerometer for Spirit Level
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event != null && event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                    val x = event.values[0]
+                    val y = event.values[1]
+                    tiltRoll = x
+                    tiltPitch = y
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        if (sensorManager != null && accelerometer != null) {
+            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        }
+
+        onDispose {
+            sensorManager?.unregisterListener(listener)
+            analysisExecutor.shutdown()
+        }
+    }
 
     // Gallery Picker Contract
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -139,26 +194,60 @@ fun CameraScannerScreen(
             scope.launch {
                 val cachedFile = copyUriToCache(context, uri)
                 if (cachedFile != null) {
-                    onImageCaptured(cachedFile.absolutePath, null)
+                    val bitmap = BitmapFactory.decodeFile(cachedFile.absolutePath)
+                    val quad = if (bitmap != null) {
+                        val detected = BitmapDocumentDetector.detectCorners(bitmap)
+                        bitmap.recycle()
+                        detected
+                    } else null
+                    onImageCaptured(cachedFile.absolutePath, quad)
                 }
             }
         }
     }
 
-    // Auto Capture Trigger Effect
+    // Auto-capture Trigger logic
+    var steadyCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(detectionStatus, isAutoCaptureEnabled, isCapturing) {
-        if (isAutoCaptureEnabled && detectionStatus == DetectionStatus.READY && !isCapturing) {
-            isCapturing = true
-            takePhoto(
-                context = context,
-                imageCapture = imageCapture,
-                onSuccess = { path ->
-                    onImageCaptured(path, detectedQuad)
-                },
-                onError = {
-                    isCapturing = false
+        if (isAutoCaptureEnabled && !isCapturing) {
+            if (detectionStatus == DetectionStatus.READY) {
+                steadyCount++
+                if (steadyCount >= 3) {
+                    triggerCapture(
+                        context = context,
+                        imageCapture = imageCapture,
+                        detectedQuad = detectedQuad,
+                        isCapturing = isCapturing,
+                        onCaptureStart = {
+                            isCapturing = true
+                            showFlashEffect = true
+                        },
+                        onCaptureSuccess = { path, quad ->
+                            isCapturing = false
+                            if (scanMode == ScanMode.BATCH) {
+                                batchCount++
+                                Toast.makeText(context, "Page $batchCount captured!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                onImageCaptured(path, quad)
+                            }
+                        },
+                        onCaptureError = {
+                            isCapturing = false
+                            steadyCount = 0
+                        }
+                    )
                 }
-            )
+            } else {
+                steadyCount = 0
+            }
+        }
+    }
+
+    // Flash animation reset
+    LaunchedEffect(showFlashEffect) {
+        if (showFlashEffect) {
+            delay(120)
+            showFlashEffect = false
         }
     }
 
@@ -169,7 +258,7 @@ fun CameraScannerScreen(
         color = Color.Black
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1. Fullscreen Camera Preview
+            // 1. CameraX Preview View
             AndroidView(
                 factory = { ctx ->
                     val previewView = PreviewView(ctx).apply {
@@ -182,51 +271,46 @@ fun CameraScannerScreen(
 
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                     cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+
+                        val capture = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                            .build()
+                        imageCapture = capture
+
+                        val imageAnalysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                            .build()
+
+                        imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                            val rawQuad = detector.detectDocument(imageProxy)
+                            val (smoothedQuad, status) = smoother.process(rawQuad)
+                            detectedQuad = smoothedQuad
+                            detectionStatus = status
+                        }
+
+                        val cameraSelector = CameraSelector.Builder()
+                            .requireLensFacing(lensFacing)
+                            .build()
+
                         try {
-                            val cameraProvider = cameraProviderFuture.get()
                             cameraProvider.unbindAll()
-
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-
-                            val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                                .build()
-
-                            val analysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build().also { analyzer ->
-                                    analyzer.setAnalyzer(analysisExecutor) { image ->
-                                        val rawQuad = detector.detectDocument(image)
-                                        val (smoothQuad, status) = smoother.process(rawQuad)
-
-                                        // Update state on Main Thread
-                                        scope.launch(Dispatchers.Main) {
-                                            detectedQuad = smoothQuad
-                                            detectionStatus = status
-                                        }
-                                    }
-                                }
-
-                            val selector = CameraSelector.Builder()
-                                .requireLensFacing(lensFacing)
-                                .build()
-
-                            val cam = cameraProvider.bindToLifecycle(
+                            val boundCamera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
-                                selector,
+                                cameraSelector,
                                 preview,
                                 capture,
-                                analysis
+                                imageAnalysis
                             )
-
-                            camera = cam
-                            imageCapture = capture
-                            hasFlashUnit = cam.cameraInfo.hasFlashUnit()
-
+                            camera = boundCamera
+                            hasFlashUnit = boundCamera.cameraInfo.hasFlashUnit()
                         } catch (e: Exception) {
-                            Log.e("CameraScanner", "Camera binding failed", e)
+                            Log.e("CameraScannerScreen", "Camera binding failed", e)
                         }
                     }, ContextCompat.getMainExecutor(ctx))
 
@@ -235,18 +319,37 @@ fun CameraScannerScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // 2. Real-time Document Detection Overlay Canvas
+            // 2. Realtime Document Overlay with Spirit Level and Guides
             DocumentOverlay(
                 quad = detectedQuad,
                 status = detectionStatus,
+                scanMode = scanMode,
+                showGrid = showGrid,
+                tiltPitch = tiltPitch,
+                tiltRoll = tiltRoll,
                 modifier = Modifier.fillMaxSize()
             )
 
-            // 3. Top Control Bar (Back | Flash | Auto-Capture Toggle)
+            // 3. Capture Screen Flash Effect
+            AnimatedVisibility(
+                visible = showFlashEffect,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White)
+                )
+            }
+
+            // 4. Top Action Bar: Back, Grid, Auto, Flash, Lens Flip
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 40.dp, start = 20.dp, end = 20.dp),
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp, start = 16.dp, end = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -255,188 +358,302 @@ fun CameraScannerScreen(
                     onClick = onBackClick,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .testTag("scanner_back_button")
+                        .background(Color.Black.copy(alpha = 0.60f))
+                        .size(42.dp)
+                        .testTag("camera_back_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
                     )
                 }
 
-                // Auto Capture Mode Toggle Badge
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            if (isAutoCaptureEnabled) MaterialTheme.colorScheme.primaryContainer else Color.Black.copy(alpha = 0.5f)
-                        )
-                        .clickable { isAutoCaptureEnabled = !isAutoCaptureEnabled }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                        .testTag("auto_capture_toggle"),
-                    contentAlignment = Alignment.Center
+                // Header Control Pills
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Grid Toggle Button
+                    IconButton(
+                        onClick = { showGrid = !showGrid },
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(
+                                if (showGrid) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                                else Color.Black.copy(alpha = 0.60f)
+                            )
+                            .size(40.dp)
+                            .testTag("camera_grid_toggle")
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = if (isAutoCaptureEnabled) MaterialTheme.colorScheme.onPrimaryContainer else Color.White,
-                            modifier = Modifier.size(16.dp)
+                            imageVector = Icons.Default.GridOn,
+                            contentDescription = "Grid",
+                            tint = if (showGrid) Color.Black else Color.White,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isAutoCaptureEnabled) "Auto Scan ON" else "Auto Scan OFF",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isAutoCaptureEnabled) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                    }
+
+                    // Auto Capture Toggle Button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isAutoCaptureEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                                else Color.Black.copy(alpha = 0.60f)
+                            )
+                            .clickable { isAutoCaptureEnabled = !isAutoCaptureEnabled }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .testTag("auto_capture_toggle")
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Auto",
+                                tint = if (isAutoCaptureEnabled) Color.Black else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isAutoCaptureEnabled) "Auto ON" else "Auto OFF",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isAutoCaptureEnabled) Color.Black else Color.White
+                            )
+                        }
+                    }
+
+                    // Flash Toggle Button
+                    if (hasFlashUnit) {
+                        IconButton(
+                            onClick = {
+                                isFlashOn = !isFlashOn
+                                camera?.cameraControl?.enableTorch(isFlashOn)
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(
+                                    if (isFlashOn) Color(0xFFFFD700).copy(alpha = 0.85f)
+                                    else Color.Black.copy(alpha = 0.60f)
+                                )
+                                .size(40.dp)
+                                .testTag("flash_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                                contentDescription = "Flash Toggle",
+                                tint = if (isFlashOn) Color.Black else Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Flip Lens Button
+                    IconButton(
+                        onClick = {
+                            lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                                CameraSelector.LENS_FACING_FRONT
+                            } else {
+                                CameraSelector.LENS_FACING_BACK
+                            }
+                        },
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.60f))
+                            .size(40.dp)
+                            .testTag("flip_camera_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FlipCameraAndroid,
+                            contentDescription = "Flip Camera",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
-
-                // Flash Button
-                IconButton(
-                    onClick = {
-                        if (hasFlashUnit && camera != null) {
-                            val newFlashState = !isFlashOn
-                            camera?.cameraControl?.enableTorch(newFlashState)
-                            isFlashOn = newFlashState
-                        }
-                    },
-                    enabled = hasFlashUnit,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(if (isFlashOn) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.5f))
-                        .testTag("scanner_flash_button")
-                ) {
-                    Icon(
-                        imageVector = if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                        contentDescription = "Toggle Flash",
-                        tint = if (hasFlashUnit) Color.White else Color.Gray
-                    )
-                }
             }
 
-            // 4. Bottom Control Bar (Gallery | Large Capture Button | Camera Flip)
+            // 5. Zoom Floating Pill (1x / 2x)
             Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 16.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.70f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+                    .clickable {
+                        zoomRatio = if (zoomRatio <= 1.2f) 2f else 1f
+                        camera?.cameraControl?.setZoomRatio(zoomRatio)
+                    }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .testTag("camera_zoom_toggle")
+            ) {
+                Text(
+                    text = "${zoomRatio.toInt()}x",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            // 6. Bottom Scanning Control Stack (Modes Carousel + Shutter + Gallery Shortcut)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .padding(vertical = 28.dp, horizontal = 28.dp)
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(top = 10.dp, bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Mode Switcher Tabs (Document | ID Card | Batch | Book)
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(ScanMode.entries) { mode ->
+                        val isSelected = scanMode == mode
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 6.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f)
+                                )
+                                .clickable { scanMode = mode }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .testTag("scan_mode_${mode.name.lowercase()}")
+                        ) {
+                            Text(
+                                text = mode.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.Black else Color.White
+                            )
+                        }
+                    }
+                }
+
+                // Shutter Row: Gallery | Big Shutter Button | Batch Finish (if Batch mode)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Small Gallery Import Button
-                    Box(
+                    // Gallery Picker
+                    IconButton(
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                         modifier = Modifier
-                            .size(52.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.18f))
-                            .clickable {
-                                galleryLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            }
-                            .testTag("scanner_gallery_button"),
-                        contentAlignment = Alignment.Center
+                            .size(52.dp)
+                            .testTag("gallery_picker_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "Gallery",
+                            contentDescription = "Import from Gallery",
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
-                    // Large Shutter Capture Button
+                    // Main Camera Shutter Button
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(76.dp)
                             .clip(CircleShape)
                             .border(4.dp, Color.White, CircleShape)
                             .padding(6.dp)
                             .clip(CircleShape)
                             .background(
-                                if (detectionStatus == DetectionStatus.READY) Color(0xFF00E5D9) else Color.White
+                                if (isCapturing) Color.Gray else MaterialTheme.colorScheme.primary
                             )
                             .clickable(enabled = !isCapturing) {
-                                isCapturing = true
-                                takePhoto(
+                                triggerCapture(
                                     context = context,
                                     imageCapture = imageCapture,
-                                    onSuccess = { path ->
-                                        onImageCaptured(path, detectedQuad)
+                                    detectedQuad = detectedQuad,
+                                    isCapturing = isCapturing,
+                                    onCaptureStart = {
+                                        isCapturing = true
+                                        showFlashEffect = true
                                     },
-                                    onError = {
+                                    onCaptureSuccess = { path, quad ->
+                                        isCapturing = false
+                                        if (scanMode == ScanMode.BATCH) {
+                                            batchCount++
+                                            Toast.makeText(context, "Page $batchCount captured!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            onImageCaptured(path, quad)
+                                        }
+                                    },
+                                    onCaptureError = {
                                         isCapturing = false
                                     }
                                 )
                             }
-                            .testTag("scanner_capture_button"),
+                            .testTag("camera_shutter_button"),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(50.dp)
                                 .clip(CircleShape)
                                 .background(Color.White)
                         )
                     }
 
-                    // Optional Camera Switch Button
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.18f))
-                            .clickable {
-                                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                                    CameraSelector.LENS_FACING_FRONT
-                                } else {
-                                    CameraSelector.LENS_FACING_BACK
+                    // Batch Done Button or Spacer
+                    if (scanMode == ScanMode.BATCH && batchCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable {
+                                    onBackClick()
                                 }
-                            }
-                            .testTag("scanner_flip_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FlipCameraAndroid,
-                            contentDescription = "Switch Camera",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .testTag("batch_done_button")
+                        ) {
+                            Text(
+                                text = "Done ($batchCount)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(52.dp))
                     }
                 }
             }
         }
     }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            analysisExecutor.shutdown()
-        }
-    }
 }
 
-private fun takePhoto(
+private fun triggerCapture(
     context: Context,
     imageCapture: ImageCapture?,
-    onSuccess: (String) -> Unit,
-    onError: (Exception) -> Unit
+    detectedQuad: DocumentQuad?,
+    isCapturing: Boolean,
+    onCaptureStart: () -> Unit,
+    onCaptureSuccess: (imagePath: String, quad: DocumentQuad?) -> Unit,
+    onCaptureError: () -> Unit
 ) {
-    if (imageCapture == null) {
-        onError(IllegalStateException("Image capture is not bound"))
-        return
-    }
+    if (imageCapture == null || isCapturing) return
 
-    val photoFile = File(
-        context.cacheDir,
-        "SCAN_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
-    )
+    onCaptureStart()
+
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+    val photoFile = File(context.cacheDir, "SCAN_$timeStamp.jpg")
 
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
@@ -445,12 +662,12 @@ private fun takePhoto(
         ContextCompat.getMainExecutor(context),
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                onSuccess(photoFile.absolutePath)
+                onCaptureSuccess(photoFile.absolutePath, detectedQuad)
             }
 
             override fun onError(exc: ImageCaptureException) {
-                Log.e("CameraScanner", "Photo capture failed: ${exc.message}", exc)
-                onError(exc)
+                Log.e("CameraScannerScreen", "Photo capture failed: ${exc.message}", exc)
+                onCaptureError()
             }
         }
     )

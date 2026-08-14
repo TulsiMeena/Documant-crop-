@@ -44,10 +44,10 @@ object WelcomeNotificationHelper {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Welcome from Amit Meena! 🙏")
-            .setContentText("A warm welcome to Document Search from app owner Amit Meena!")
+            .setContentText("A warm welcome to Scannivo from App Owner Amit Meena!")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("A warm welcome to Document Search!\n\nApp Owner & Malik: Amit Meena\n\nThank you for using our document scanning & search app!")
+                    .bigText("A warm welcome to Scannivo!\n\nApp Owner: Amit Meena\n\nThank you for using our document scanning & search app!")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)

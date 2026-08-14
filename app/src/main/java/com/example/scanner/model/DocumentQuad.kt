@@ -5,7 +5,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
- * Represents a detected document's four corners in normalized coordinates (0.0f .. 1.0f).
+ * Represents a document's four corners in normalized coordinates (0.0f .. 1.0f).
  * Top-Left, Top-Right, Bottom-Right, Bottom-Left.
  */
 data class DocumentQuad(
@@ -33,16 +33,16 @@ data class DocumentQuad(
     }
 
     /**
-     * Checks if the quadrilateral is convex and reasonably proportioned for a document.
+     * Checks if the quadrilateral is non-degenerate and has meaningful area.
      */
     fun isValidQuad(): Boolean {
-        // Area must be at least ~5% of frame and not exceed ~95%
         val a = area()
-        if (a < 0.05f || a > 0.95f) return false
-
-        // Check corner ordering / non-overlapping coordinates
-        if (topLeft.x >= topRight.x || bottomLeft.x >= bottomRight.x) return false
-        if (topLeft.y >= bottomLeft.y || topRight.y >= bottomRight.y) return false
+        // Allow anything from minimal crop to full boundary (0.005f to 1.0f)
+        if (a < 0.005f) return false
+        
+        // Basic non-inversion check: Left corners shouldn't cross right corners completely
+        if (topLeft.x > bottomRight.x && bottomLeft.x > topRight.x) return false
+        if (topLeft.y > bottomRight.y && topRight.y > bottomLeft.y) return false
 
         return true
     }
@@ -67,12 +67,48 @@ data class DocumentQuad(
             bottomLeft = PointF(0.08f, 0.92f)
         )
 
+        fun defaultInsetQuad(): DocumentQuad = defaultQuad()
+
         fun fullImageQuad(): DocumentQuad = DocumentQuad(
-            topLeft = PointF(0.01f, 0.01f),
-            topRight = PointF(0.99f, 0.01f),
-            bottomRight = PointF(0.99f, 0.99f),
-            bottomLeft = PointF(0.01f, 0.99f)
+            topLeft = PointF(0.005f, 0.005f),
+            topRight = PointF(0.995f, 0.005f),
+            bottomRight = PointF(0.995f, 0.995f),
+            bottomLeft = PointF(0.005f, 0.995f)
         )
+
+        fun a4Quad(imageRatio: Float = 0.75f): DocumentQuad {
+            // A4 is roughly 1 : 1.414 (width : height ratio = ~0.707)
+            val halfW = 0.38f
+            val halfH = 0.44f
+            return DocumentQuad(
+                topLeft = PointF((0.5f - halfW).coerceAtLeast(0.02f), (0.5f - halfH).coerceAtLeast(0.02f)),
+                topRight = PointF((0.5f + halfW).coerceAtMost(0.98f), (0.5f - halfH).coerceAtLeast(0.02f)),
+                bottomRight = PointF((0.5f + halfW).coerceAtMost(0.98f), (0.5f + halfH).coerceAtMost(0.98f)),
+                bottomLeft = PointF((0.5f - halfW).coerceAtLeast(0.02f), (0.5f + halfH).coerceAtMost(0.98f))
+            )
+        }
+
+        fun idCardQuad(): DocumentQuad {
+            // ID Card is standard 85.60 × 53.98 mm (approx 1.58 : 1 horizontal)
+            val halfW = 0.44f
+            val halfH = 0.28f
+            return DocumentQuad(
+                topLeft = PointF((0.5f - halfW).coerceAtLeast(0.02f), (0.5f - halfH).coerceAtLeast(0.02f)),
+                topRight = PointF((0.5f + halfW).coerceAtMost(0.98f), (0.5f - halfH).coerceAtLeast(0.02f)),
+                bottomRight = PointF((0.5f + halfW).coerceAtMost(0.98f), (0.5f + halfH).coerceAtMost(0.98f)),
+                bottomLeft = PointF((0.5f - halfW).coerceAtLeast(0.02f), (0.5f + halfH).coerceAtMost(0.98f))
+            )
+        }
+
+        fun squareQuad(): DocumentQuad {
+            val half = 0.38f
+            return DocumentQuad(
+                topLeft = PointF(0.5f - half, 0.5f - half),
+                topRight = PointF(0.5f + half, 0.5f - half),
+                bottomRight = PointF(0.5f + half, 0.5f + half),
+                bottomLeft = PointF(0.5f - half, 0.5f + half)
+            )
+        }
     }
 }
 
@@ -82,3 +118,4 @@ enum class DetectionStatus(val label: String) {
     STEADY("Hold steady"),
     READY("Ready to scan")
 }
+

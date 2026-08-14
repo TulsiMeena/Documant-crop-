@@ -70,7 +70,7 @@ fun SplashScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "DOCUMENT SEARCH",
+                    text = "SCANNIVO",
                     style = MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground,

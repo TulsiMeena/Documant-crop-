@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,12 +24,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -34,9 +40,11 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -80,11 +88,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class AspectRatioAssist(val label: String, val ratioWToH: Float) {
-    AUTO("Auto", 0f),
-    A4("A4", 0.707f),
-    ID_CARD("ID Card", 1.586f),
-    RECEIPT("Receipt", 0.45f)
+enum class CropPreset(val label: String) {
+    FREE("Free / Auto"),
+    FULL_PAGE("Full Image"),
+    A4("A4 (Document)"),
+    ID_CARD("ID Card"),
+    RECEIPT("Receipt"),
+    SQUARE("Square (1:1)")
 }
 
 @Composable
@@ -105,7 +115,7 @@ fun PerspectiveCropScreen(
     var selectedEdge by remember { mutableStateOf(ActiveEdge.NONE) }
     val lockedCorners = remember { mutableStateListOf<ActiveCorner>() }
 
-    var activeRatio by remember { mutableStateOf(AspectRatioAssist.AUTO) }
+    var activePreset by remember { mutableStateOf(CropPreset.FREE) }
     var isAdjusting by remember { mutableStateOf(false) }
 
     var isProcessing by remember { mutableStateOf(true) }
@@ -115,7 +125,10 @@ fun PerspectiveCropScreen(
     val history = remember { mutableStateListOf<DocumentQuad>() }
     var historyIndex by remember { mutableIntStateOf(-1) }
 
-    val currentQuad: DocumentQuad? = if (history.isNotEmpty() && historyIndex in history.indices) {
+    // Live Quad (updates seamlessly during drag, committed on drag release)
+    var liveQuad by remember { mutableStateOf<DocumentQuad?>(null) }
+
+    val currentQuad: DocumentQuad? = liveQuad ?: if (history.isNotEmpty() && historyIndex in history.indices) {
         history[historyIndex]
     } else null
 
@@ -123,12 +136,16 @@ fun PerspectiveCropScreen(
 
     // Helper to push new quad state to history stack
     fun pushHistory(newQuad: DocumentQuad) {
-        if (historyIndex >= 0 && historyIndex < history.size && history[historyIndex] == newQuad) return
+        if (historyIndex >= 0 && historyIndex < history.size && history[historyIndex] == newQuad) {
+            liveQuad = newQuad
+            return
+        }
         while (history.size > historyIndex + 1) {
             history.removeAt(history.size - 1)
         }
         history.add(newQuad)
         historyIndex = history.size - 1
+        liveQuad = newQuad
     }
 
     // 1. Load Bitmap & Initial Auto Detection
@@ -173,8 +190,8 @@ fun PerspectiveCropScreen(
             }
 
             val newPt = PointF(
-                (curPt.x + dxNorm).coerceIn(0.01f, 0.99f),
-                (curPt.y + dyNorm).coerceIn(0.01f, 0.99f)
+                (curPt.x + dxNorm).coerceIn(0.005f, 0.995f),
+                (curPt.y + dyNorm).coerceIn(0.005f, 0.995f)
             )
 
             val updated = when (selectedCorner) {
@@ -191,20 +208,20 @@ fun PerspectiveCropScreen(
         } else if (selectedEdge != ActiveEdge.NONE) {
             val updated = when (selectedEdge) {
                 ActiveEdge.TOP -> quad.copy(
-                    topLeft = PointF((quad.topLeft.x + dxNorm).coerceIn(0.01f, 0.95f), (quad.topLeft.y + dyNorm).coerceIn(0.01f, 0.95f)),
-                    topRight = PointF((quad.topRight.x + dxNorm).coerceIn(0.05f, 0.99f), (quad.topRight.y + dyNorm).coerceIn(0.01f, 0.95f))
+                    topLeft = PointF(quad.topLeft.x, (quad.topLeft.y + dyNorm).coerceIn(0.005f, 0.995f)),
+                    topRight = PointF(quad.topRight.x, (quad.topRight.y + dyNorm).coerceIn(0.005f, 0.995f))
                 )
                 ActiveEdge.BOTTOM -> quad.copy(
-                    bottomLeft = PointF((quad.bottomLeft.x + dxNorm).coerceIn(0.01f, 0.95f), (quad.bottomLeft.y + dyNorm).coerceIn(0.05f, 0.99f)),
-                    bottomRight = PointF((quad.bottomRight.x + dxNorm).coerceIn(0.05f, 0.99f), (quad.bottomRight.y + dyNorm).coerceIn(0.05f, 0.99f))
+                    bottomLeft = PointF(quad.bottomLeft.x, (quad.bottomLeft.y + dyNorm).coerceIn(0.005f, 0.995f)),
+                    bottomRight = PointF(quad.bottomRight.x, (quad.bottomRight.y + dyNorm).coerceIn(0.005f, 0.995f))
                 )
                 ActiveEdge.LEFT -> quad.copy(
-                    topLeft = PointF((quad.topLeft.x + dxNorm).coerceIn(0.01f, 0.95f), (quad.topLeft.y + dyNorm).coerceIn(0.01f, 0.95f)),
-                    bottomLeft = PointF((quad.bottomLeft.x + dxNorm).coerceIn(0.01f, 0.95f), (quad.bottomLeft.y + dyNorm).coerceIn(0.05f, 0.99f))
+                    topLeft = PointF((quad.topLeft.x + dxNorm).coerceIn(0.005f, 0.995f), quad.topLeft.y),
+                    bottomLeft = PointF((quad.bottomLeft.x + dxNorm).coerceIn(0.005f, 0.995f), quad.bottomLeft.y)
                 )
                 ActiveEdge.RIGHT -> quad.copy(
-                    topRight = PointF((quad.topRight.x + dxNorm).coerceIn(0.05f, 0.99f), (quad.topRight.y + dyNorm).coerceIn(0.01f, 0.95f)),
-                    bottomRight = PointF((quad.bottomRight.x + dxNorm).coerceIn(0.05f, 0.99f), (quad.bottomRight.y + dyNorm).coerceIn(0.05f, 0.99f))
+                    topRight = PointF((quad.topRight.x + dxNorm).coerceIn(0.005f, 0.995f), quad.topRight.y),
+                    bottomRight = PointF((quad.bottomRight.x + dxNorm).coerceIn(0.005f, 0.995f), quad.bottomRight.y)
                 )
                 else -> quad
             }
@@ -215,26 +232,30 @@ fun PerspectiveCropScreen(
         }
     }
 
-    // Apply Aspect Ratio Assist
-    fun applyAspectRatio(assist: AspectRatioAssist) {
-        activeRatio = assist
-        if (assist == AspectRatioAssist.AUTO) return
-        val quad = currentQuad ?: return
+    // Apply Preset Option
+    fun applyPreset(preset: CropPreset) {
+        activePreset = preset
+        val quad = currentQuad ?: DocumentQuad.fullImageQuad()
 
-        val centerX = (quad.topLeft.x + quad.topRight.x + quad.bottomRight.x + quad.bottomLeft.x) / 4f
-        val centerY = (quad.topLeft.y + quad.topRight.y + quad.bottomRight.y + quad.bottomLeft.y) / 4f
-
-        val avgH = ((quad.bottomLeft.y - quad.topLeft.y) + (quad.bottomRight.y - quad.topRight.y)) / 2f
-        val targetW = (avgH * assist.ratioWToH).coerceIn(0.15f, 0.85f)
-        val halfW = targetW / 2f
-        val halfH = avgH / 2f
-
-        val adjusted = DocumentQuad(
-            topLeft = PointF((centerX - halfW).coerceIn(0.02f, 0.95f), (centerY - halfH).coerceIn(0.02f, 0.95f)),
-            topRight = PointF((centerX + halfW).coerceIn(0.05f, 0.98f), (centerY - halfH).coerceIn(0.02f, 0.95f)),
-            bottomRight = PointF((centerX + halfW).coerceIn(0.05f, 0.98f), (centerY + halfH).coerceIn(0.05f, 0.98f)),
-            bottomLeft = PointF((centerX - halfW).coerceIn(0.02f, 0.95f), (centerY + halfH).coerceIn(0.05f, 0.98f))
-        )
+        val adjusted = when (preset) {
+            CropPreset.FREE -> autoDetectedQuad ?: DocumentQuad.defaultInsetQuad()
+            CropPreset.FULL_PAGE -> DocumentQuad.fullImageQuad()
+            CropPreset.A4 -> DocumentQuad.a4Quad()
+            CropPreset.ID_CARD -> DocumentQuad.idCardQuad()
+            CropPreset.RECEIPT -> {
+                val cx = 0.5f
+                val cy = 0.5f
+                val halfW = 0.22f
+                val halfH = 0.44f
+                DocumentQuad(
+                    topLeft = PointF(cx - halfW, cy - halfH),
+                    topRight = PointF(cx + halfW, cy - halfH),
+                    bottomRight = PointF(cx + halfW, cy + halfH),
+                    bottomLeft = PointF(cx - halfW, cy + halfH)
+                )
+            }
+            CropPreset.SQUARE -> DocumentQuad.squareQuad()
+        }
 
         if (adjusted.isValidQuad()) {
             pushHistory(adjusted)
@@ -257,7 +278,7 @@ fun PerspectiveCropScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = 64.dp, bottom = 220.dp)
+                        .padding(top = 64.dp, bottom = 230.dp)
                 ) {
                     Image(
                         bitmap = bmp.asImageBitmap(),
@@ -270,7 +291,8 @@ fun PerspectiveCropScreen(
                         CropOverlay(
                             bitmap = bmp,
                             quad = quad,
-                            onQuadChanged = { newQ -> pushHistory(newQ) },
+                            onQuadChanged = { newQ -> liveQuad = newQ },
+                            onDragEnd = { finalQ -> pushHistory(finalQ) },
                             selectedCorner = selectedCorner,
                             onCornerSelected = { corner -> selectedCorner = corner },
                             selectedEdge = selectedEdge,
@@ -284,7 +306,7 @@ fun PerspectiveCropScreen(
                 }
             }
 
-            // 2. Top Header Bar (Back, Undo, Redo, Lock, Reset)
+            // 2. Top Header Bar (Back, Undo, Redo, Lock, Maximize, Reset)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -298,7 +320,7 @@ fun PerspectiveCropScreen(
                     onClick = onRetake,
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(Color.Black.copy(alpha = 0.65f))
                         .size(42.dp)
                         .testTag("crop_back_button")
                 ) {
@@ -310,20 +332,23 @@ fun PerspectiveCropScreen(
                     )
                 }
 
-                // Center Compact Toolbar: Undo | Redo | Corner Lock | Reset
+                // Center Compact Toolbar: Undo | Redo | Corner Lock | Full | Reset
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(Color.Black.copy(alpha = 0.75f))
+                        .background(Color.Black.copy(alpha = 0.78f))
                         .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Undo
                     IconButton(
                         onClick = {
-                            if (historyIndex > 0) historyIndex--
+                            if (historyIndex > 0) {
+                                historyIndex--
+                                liveQuad = history[historyIndex]
+                            }
                         },
                         enabled = historyIndex > 0,
                         modifier = Modifier.size(36.dp).testTag("crop_undo_button")
@@ -339,7 +364,10 @@ fun PerspectiveCropScreen(
                     // Redo
                     IconButton(
                         onClick = {
-                            if (historyIndex < history.size - 1) historyIndex++
+                            if (historyIndex < history.size - 1) {
+                                historyIndex++
+                                liveQuad = history[historyIndex]
+                            }
                         },
                         enabled = historyIndex < history.size - 1,
                         modifier = Modifier.size(36.dp).testTag("crop_redo_button")
@@ -381,6 +409,21 @@ fun PerspectiveCropScreen(
                         )
                     }
 
+                    // Full Screen / Maximize Button
+                    IconButton(
+                        onClick = {
+                            applyPreset(CropPreset.FULL_PAGE)
+                        },
+                        modifier = Modifier.size(36.dp).testTag("crop_full_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Full Page",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
                             .width(1.dp)
@@ -388,12 +431,12 @@ fun PerspectiveCropScreen(
                             .background(Color.White.copy(alpha = 0.2f))
                     )
 
-                    // Reset / Full Image Button
+                    // Reset / Auto Inset Button
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
-                                val resetQ = autoDetectedQuad ?: BitmapDocumentDetector.getDefaultInsetQuad()
+                                val resetQ = autoDetectedQuad ?: DocumentQuad.defaultInsetQuad()
                                 pushHistory(resetQ)
                             }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -417,55 +460,47 @@ fun PerspectiveCropScreen(
                 }
             }
 
-            // 3. Bottom Control Stack (Ratio Assist, Point Selector, Directional Nudge, Actions)
+            // 3. Bottom Control Stack (Presets Carousel, 4 Corner Selectors + D-Pad Nudge, Actions)
             if (!isProcessing) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.90f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .background(Color.Black.copy(alpha = 0.92f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Aspect Ratio Assist Row
-                    Row(
+                    // Presets Carousel Row
+                    LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Ratio:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-
-                        AspectRatioAssist.entries.forEach { assist ->
-                            val isSelected = activeRatio == assist
+                        items(CropPreset.entries) { preset ->
+                            val isSelected = activePreset == preset
                             Box(
                                 modifier = Modifier
-                                    .padding(horizontal = 4.dp)
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(
                                         if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f)
                                     )
-                                    .clickable { applyAspectRatio(assist) }
+                                    .clickable { applyPreset(preset) }
                                     .padding(horizontal = 10.dp, vertical = 5.dp)
-                                    .testTag("ratio_${assist.name.lowercase()}")
+                                    .testTag("preset_${preset.name.lowercase()}")
                             ) {
                                 Text(
-                                    text = assist.label,
+                                    text = preset.label,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = Color.White
+                                    color = if (isSelected) Color.Black else Color.White
                                 )
                             }
                         }
                     }
 
-                    // 4-Way Directional Move & Point Selection
+                    // 4-Corner Selector Tabs & Directional Nudge D-Pad
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -473,21 +508,22 @@ fun PerspectiveCropScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Corner Selection Tabs (TL, TR, BR, BL)
+                        // 4 Corner Selection Options (Top-Left, Top-Right, Bottom-Right, Bottom-Left)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Select Corner Point:",
+                                text = "4-Point Options (Select Corner):",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 11.sp
+                                color = Color.White.copy(alpha = 0.75f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(
-                                    Pair("TL", ActiveCorner.TOP_LEFT),
-                                    Pair("TR", ActiveCorner.TOP_RIGHT),
-                                    Pair("BR", ActiveCorner.BOTTOM_RIGHT),
-                                    Pair("BL", ActiveCorner.BOTTOM_LEFT)
-                                ).forEach { (label, corner) ->
+                                    Triple("TL", ActiveCorner.TOP_LEFT, "Top Left"),
+                                    Triple("TR", ActiveCorner.TOP_RIGHT, "Top Right"),
+                                    Triple("BR", ActiveCorner.BOTTOM_RIGHT, "Bottom Right"),
+                                    Triple("BL", ActiveCorner.BOTTOM_LEFT, "Bottom Left")
+                                ).forEach { (label, corner, _) ->
                                     val sel = selectedCorner == corner
                                     val locked = lockedCorners.contains(corner)
                                     Box(
@@ -527,16 +563,16 @@ fun PerspectiveCropScreen(
                             NudgeButton(
                                 icon = Icons.Default.ExpandLess,
                                 contentDescription = "Move Up",
-                                onClick = { nudge(0f, -0.018f) },
+                                onClick = { nudge(0f, -0.015f) },
                                 testTag = "nudge_up"
                             )
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 // LEFT
                                 NudgeButton(
                                     icon = Icons.Default.ChevronLeft,
                                     contentDescription = "Move Left",
-                                    onClick = { nudge(-0.018f, 0f) },
+                                    onClick = { nudge(-0.015f, 0f) },
                                     testTag = "nudge_left"
                                 )
 
@@ -544,7 +580,7 @@ fun PerspectiveCropScreen(
                                 NudgeButton(
                                     icon = Icons.Default.ExpandMore,
                                     contentDescription = "Move Down",
-                                    onClick = { nudge(0f, 0.018f) },
+                                    onClick = { nudge(0f, 0.015f) },
                                     testTag = "nudge_down"
                                 )
 
@@ -552,22 +588,22 @@ fun PerspectiveCropScreen(
                                 NudgeButton(
                                     icon = Icons.Default.ChevronRight,
                                     contentDescription = "Move Right",
-                                    onClick = { nudge(0.018f, 0f) },
+                                    onClick = { nudge(0.015f, 0f) },
                                     testTag = "nudge_right"
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Secondary Toolbar & Primary Action (Auto Detect | Rotate | Apply Crop)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Auto Detect
+                        // Auto Detect Button
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -578,11 +614,11 @@ fun PerspectiveCropScreen(
                                     if (b != null) {
                                         scope.launch(Dispatchers.IO) {
                                             val reDetected = BitmapDocumentDetector.detectCorners(b)
-                                                ?: BitmapDocumentDetector.getDefaultInsetQuad()
+                                                ?: DocumentQuad.defaultInsetQuad()
                                             withContext(Dispatchers.Main) {
                                                 autoDetectedQuad = reDetected
                                                 pushHistory(reDetected)
-                                                Toast.makeText(context, "Corners Auto-Detected", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Document Corners Detected", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -598,7 +634,7 @@ fun PerspectiveCropScreen(
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Auto Detect",
                                     style = MaterialTheme.typography.labelMedium,
@@ -608,7 +644,26 @@ fun PerspectiveCropScreen(
                             }
                         }
 
-                        // Rotate 90 degrees
+                        // Rotate Left
+                        IconButton(
+                            onClick = {
+                                rotationDegrees = (rotationDegrees - 90 + 360) % 360
+                            },
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(alpha = 0.14f))
+                                .size(44.dp)
+                                .testTag("crop_rotate_left_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RotateLeft,
+                                contentDescription = "Rotate Left",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Rotate Right
                         IconButton(
                             onClick = {
                                 rotationDegrees = (rotationDegrees + 90) % 360
@@ -616,14 +671,14 @@ fun PerspectiveCropScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(Color.White.copy(alpha = 0.14f))
-                                .size(46.dp)
+                                .size(44.dp)
                                 .testTag("crop_rotate_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.RotateRight,
-                                contentDescription = "Rotate",
+                                contentDescription = "Rotate Right",
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
@@ -675,7 +730,7 @@ fun PerspectiveCropScreen(
                             },
                             icon = Icons.Default.Check,
                             modifier = Modifier
-                                .weight(1.3f)
+                                .weight(1.2f)
                                 .testTag("apply_crop_button")
                         )
                     }
@@ -708,11 +763,7 @@ fun PerspectiveCropScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            rawBitmap?.recycle()
-        }
-    }
+    // Bitmap state lifecycle is cleanly reclaimed by GC on disposal
 }
 
 @Composable
@@ -728,14 +779,14 @@ private fun NudgeButton(
         if (isPressing) {
             while (isPressing) {
                 onClick()
-                delay(80)
+                delay(70)
             }
         }
     }
 
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(34.dp)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.18f))
             .pointerInput(Unit) {
@@ -755,7 +806,8 @@ private fun NudgeButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = Color.White,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(20.dp)
         )
     }
 }
+

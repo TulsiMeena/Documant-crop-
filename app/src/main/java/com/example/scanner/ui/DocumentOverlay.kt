@@ -35,12 +35,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.scanner.model.DetectionStatus
 import com.example.scanner.model.DocumentQuad
-import com.example.ui.theme.ScanlineCyan
+
+enum class ScanMode(val label: String) {
+    DOCUMENT("Document"),
+    ID_CARD("ID Card"),
+    BATCH("Batch Mode"),
+    BOOK("Book / Spread")
+}
 
 @Composable
 fun DocumentOverlay(
     quad: DocumentQuad?,
     status: DetectionStatus,
+    scanMode: ScanMode = ScanMode.DOCUMENT,
+    showGrid: Boolean = false,
+    tiltPitch: Float = 0f,
+    tiltRoll: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scan_beam")
@@ -59,18 +69,60 @@ fun DocumentOverlay(
             .fillMaxSize()
             .testTag("document_overlay")
     ) {
-        // 1. Draw Document Boundary & Corner Handles Canvas
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
 
+            // 1. Grid Lines (if enabled)
+            if (showGrid) {
+                val gridColor = Color.White.copy(alpha = 0.22f)
+                val gridStroke = 1.dp.toPx()
+                drawLine(gridColor, Offset(w / 3f, 0f), Offset(w / 3f, h), gridStroke)
+                drawLine(gridColor, Offset(2 * w / 3f, 0f), Offset(2 * w / 3f, h), gridStroke)
+                drawLine(gridColor, Offset(0f, h / 3f), Offset(w, h / 3f), gridStroke)
+                drawLine(gridColor, Offset(0f, 2 * h / 3f), Offset(w, 2 * h / 3f), gridStroke)
+            }
+
+            // 2. Specific Mode Framing Guides
+            when (scanMode) {
+                ScanMode.ID_CARD -> {
+                    // ID Card bounding guide (standard CR80 1.586 aspect ratio)
+                    val cardW = w * 0.84f
+                    val cardH = cardW / 1.586f
+                    val left = (w - cardW) / 2f
+                    val top = (h - cardH) / 2f - 30.dp.toPx()
+
+                    drawRoundRect(
+                        color = Color(0xFF00E5D9).copy(alpha = 0.35f),
+                        topLeft = Offset(left, top),
+                        size = androidx.compose.ui.geometry.Size(cardW, cardH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()),
+                        style = Stroke(width = 2.dp.toPx())
+                    )
+                }
+                ScanMode.BOOK -> {
+                    // Dual page center spine divider
+                    val centerX = w / 2f
+                    val topY = h * 0.15f
+                    val bottomY = h * 0.80f
+                    drawLine(
+                        color = Color(0xFF00E5D9).copy(alpha = 0.5f),
+                        start = Offset(centerX, topY),
+                        end = Offset(centerX, bottomY),
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                else -> Unit
+            }
+
+            // 3. Draw Realtime Document Detection Quad
             if (quad != null) {
                 val tl = PointF(quad.topLeft.x * w, quad.topLeft.y * h)
                 val tr = PointF(quad.topRight.x * w, quad.topRight.y * h)
                 val br = PointF(quad.bottomRight.x * w, quad.bottomRight.y * h)
                 val bl = PointF(quad.bottomLeft.x * w, quad.bottomLeft.y * h)
 
-                // Fill translucent overlay inside quad
                 val path = Path().apply {
                     moveTo(tl.x, tl.y)
                     lineTo(tr.x, tr.y)
@@ -80,14 +132,14 @@ fun DocumentOverlay(
                 }
 
                 val fillAlpha = when (status) {
-                    DetectionStatus.READY -> 0.25f
-                    DetectionStatus.STEADY -> 0.18f
-                    else -> 0.10f
+                    DetectionStatus.READY -> 0.28f
+                    DetectionStatus.STEADY -> 0.20f
+                    else -> 0.12f
                 }
 
                 val strokeColor = when (status) {
                     DetectionStatus.READY -> Color(0xFF00E5D9) // Glowing cyan
-                    DetectionStatus.STEADY -> Color(0xFF38BDF8) // Soft cyan
+                    DetectionStatus.STEADY -> Color(0xFF38BDF8) // Soft blue
                     else -> Color.White
                 }
 
@@ -100,7 +152,7 @@ fun DocumentOverlay(
                     style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                 )
 
-                // Draw Animated Scan Beam across detected quad
+                // Animated Scan Beam across detected quad
                 val beamYTop = tl.y + (bl.y - tl.y) * scanProgress
                 val beamYTopR = tr.y + (br.y - tr.y) * scanProgress
                 val beamXLeft = tl.x + (bl.x - tl.x) * scanProgress
@@ -110,7 +162,7 @@ fun DocumentOverlay(
                     color = Color(0xFF00E5D9),
                     start = Offset(beamXLeft, beamYTop),
                     end = Offset(beamXRight, beamYTopR),
-                    strokeWidth = 2.dp.toPx(),
+                    strokeWidth = 2.5.dp.toPx(),
                     cap = StrokeCap.Round
                 )
 
@@ -119,19 +171,19 @@ fun DocumentOverlay(
                 corners.forEach { corner ->
                     // Outer glowing ring
                     drawCircle(
-                        color = strokeColor.copy(alpha = 0.4f),
-                        radius = 12.dp.toPx(),
+                        color = strokeColor.copy(alpha = 0.45f),
+                        radius = 14.dp.toPx(),
                         center = Offset(corner.x, corner.y)
                     )
                     // Inner solid dot
                     drawCircle(
                         color = Color.White,
-                        radius = 6.dp.toPx(),
+                        radius = 6.5.dp.toPx(),
                         center = Offset(corner.x, corner.y)
                     )
                 }
-            } else {
-                // When looking for document, draw subtle guide viewport corners
+            } else if (scanMode == ScanMode.DOCUMENT || scanMode == ScanMode.BATCH) {
+                // Subtle guide viewport corners
                 val guideMarginX = w * 0.10f
                 val guideMarginY = h * 0.18f
                 val guideW = w - (guideMarginX * 2)
@@ -156,15 +208,37 @@ fun DocumentOverlay(
                 drawLine(guideColor, Offset(guideMarginX, guideMarginY + guideH), Offset(guideMarginX + cornerLength, guideMarginY + guideH), strokeW)
                 drawLine(guideColor, Offset(guideMarginX, guideMarginY + guideH), Offset(guideMarginX, guideMarginY + guideH - cornerLength), strokeW)
             }
+
+            // 4. Spirit Bubble Level Indicator (Center Crosshair)
+            val isLeveled = kotlin.math.abs(tiltPitch) < 4f && kotlin.math.abs(tiltRoll) < 4f
+            val bubbleCenter = Offset(
+                x = (w / 2f + (tiltRoll * 4.dp.toPx())).coerceIn(w / 2f - 24.dp.toPx(), w / 2f + 24.dp.toPx()),
+                y = (h * 0.38f + (tiltPitch * 4.dp.toPx())).coerceIn(h * 0.38f - 24.dp.toPx(), h * 0.38f + 24.dp.toPx())
+            )
+
+            // Outer spirit target circle
+            drawCircle(
+                color = if (isLeveled) Color(0xFF00E5D9).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.25f),
+                radius = 20.dp.toPx(),
+                center = Offset(w / 2f, h * 0.38f),
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+
+            // Moving spirit bubble dot
+            drawCircle(
+                color = if (isLeveled) Color(0xFF00E5D9) else Color.White.copy(alpha = 0.6f),
+                radius = 5.dp.toPx(),
+                center = bubbleCenter
+            )
         }
 
-        // 2. Status Pill Tag
+        // Status Pill Tag
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 80.dp)
+                .padding(top = 90.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color.Black.copy(alpha = 0.65f))
+                .background(Color.Black.copy(alpha = 0.70f))
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .testTag("status_pill")
         ) {
@@ -188,7 +262,11 @@ fun DocumentOverlay(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
-                    text = status.label,
+                    text = when (scanMode) {
+                        ScanMode.ID_CARD -> "Align ID Card in Frame"
+                        ScanMode.BOOK -> "Align Center Spine"
+                        else -> status.label
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
@@ -197,3 +275,4 @@ fun DocumentOverlay(
         }
     }
 }
+

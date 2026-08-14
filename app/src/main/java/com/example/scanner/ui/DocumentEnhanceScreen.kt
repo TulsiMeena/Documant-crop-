@@ -163,8 +163,9 @@ fun DocumentEnhanceScreen(
                 try {
                     val result = DocumentEnhancer.enhance(srcBmp, mode, params)
                     withContext(Dispatchers.Main) {
-                        renderedPreviewBitmap?.recycle()
+                        val oldBitmap = renderedPreviewBitmap
                         renderedPreviewBitmap = result
+                        // Let GC manage bitmap lifecycle safely without breaking Compose rendering pipeline
                     }
                 } catch (e: Exception) {
                     Log.e("DocumentEnhanceScreen", "Error updating preview", e)
@@ -689,11 +690,5 @@ fun DocumentEnhanceScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            fullResSourceBitmap?.recycle()
-            previewSourceBitmap?.recycle()
-            renderedPreviewBitmap?.recycle()
-        }
-    }
+    // Bitmap state lifecycle is cleanly reclaimed by GC on disposal
 }

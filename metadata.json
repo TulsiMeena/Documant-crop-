@@ -1,6 +1,6 @@
 {
-  "name": "Document Search",
-  "description": "Document Search app by owner Amit Meena featuring document scanning, OCR text search, and multi-page export.",
+  "name": "Scannivo",
+  "description": "Scannivo - Smart camera document scanner with real-time 4-point perspective warp, AI edge detection, multi-filter enhancement, and PDF export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

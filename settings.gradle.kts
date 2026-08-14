@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Document Search"
+rootProject.name = "Scannivo"
 
 include(":app")

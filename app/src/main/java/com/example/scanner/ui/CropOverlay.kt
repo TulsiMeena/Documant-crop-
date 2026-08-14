@@ -28,10 +28,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.scanner.model.DocumentQuad
-import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.min
 
 enum class ActiveCorner { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT }
 enum class ActiveEdge { NONE, TOP, BOTTOM, LEFT, RIGHT }
@@ -41,6 +39,7 @@ fun CropOverlay(
     bitmap: Bitmap?,
     quad: DocumentQuad,
     onQuadChanged: (DocumentQuad) -> Unit,
+    onDragEnd: (DocumentQuad) -> Unit,
     selectedCorner: ActiveCorner,
     onCornerSelected: (ActiveCorner) -> Unit,
     selectedEdge: ActiveEdge,
@@ -51,12 +50,12 @@ fun CropOverlay(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val handleTouchRadiusPx = with(density) { 44.dp.toPx() }
-    val edgeTouchRadiusPx = with(density) { 28.dp.toPx() }
+    val handleTouchRadiusPx = with(density) { 52.dp.toPx() }
+    val edgeTouchRadiusPx = with(density) { 32.dp.toPx() }
 
-    // Use rememberUpdatedState so pointerInput gesture detection is never cancelled on recompositions
     val currentQuad by rememberUpdatedState(quad)
     val currentOnQuadChanged by rememberUpdatedState(onQuadChanged)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     val currentSelectedCorner by rememberUpdatedState(selectedCorner)
     val currentOnCornerSelected by rememberUpdatedState(onCornerSelected)
     val currentSelectedEdge by rememberUpdatedState(selectedEdge)
@@ -78,7 +77,6 @@ fun CropOverlay(
                         val h = size.height.toFloat()
                         if (w <= 0f || h <= 0f) return@detectDragGestures
 
-                        // Exact letterbox computation to match ContentScale.Fit of the Bitmap
                         val bmpW = bitmap?.width?.toFloat() ?: w
                         val bmpH = bitmap?.height?.toFloat() ?: h
                         val scale = minOf(w / bmpW, h / bmpH)
@@ -113,7 +111,6 @@ fun CropOverlay(
                             currentOnEdgeSelected(ActiveEdge.NONE)
                             currentOnAdjustingChanged(true)
                         } else {
-                            // Check distance to edges
                             val dTop = distanceToSegment(touchOffset, tl, tr)
                             val dBottom = distanceToSegment(touchOffset, bl, br)
                             val dLeft = distanceToSegment(touchOffset, tl, bl)
@@ -133,7 +130,7 @@ fun CropOverlay(
                                 currentOnCornerSelected(ActiveCorner.NONE)
                                 currentOnAdjustingChanged(true)
                             } else {
-                                // Default to closest corner if user taps somewhere nearby
+                                // Default to closest corner
                                 val corner = when (minCornerDistance) {
                                     dTL -> ActiveCorner.TOP_LEFT
                                     dTR -> ActiveCorner.TOP_RIGHT
@@ -152,11 +149,13 @@ fun CropOverlay(
                         activeDragCorner = ActiveCorner.NONE
                         activeDragEdge = ActiveEdge.NONE
                         currentOnAdjustingChanged(false)
+                        currentOnDragEnd(currentQuad)
                     },
                     onDragCancel = {
                         activeDragCorner = ActiveCorner.NONE
                         activeDragEdge = ActiveEdge.NONE
                         currentOnAdjustingChanged(false)
+                        currentOnDragEnd(currentQuad)
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
@@ -179,44 +178,15 @@ fun CropOverlay(
                         if (targetCorner != ActiveCorner.NONE) {
                             if (currentLockedCorners.contains(targetCorner)) return@detectDragGestures
 
-                            // Compute new normalized position based on finger position or drag delta
-                            val newNormX = ((change.position.x - offsetX) / drawnW).coerceIn(0.01f, 0.99f)
-                            val newNormY = ((change.position.y - offsetY) / drawnH).coerceIn(0.01f, 0.99f)
+                            val newNormX = ((change.position.x - offsetX) / drawnW).coerceIn(0.005f, 0.995f)
+                            val newNormY = ((change.position.y - offsetY) / drawnH).coerceIn(0.005f, 0.995f)
                             val newPt = PointF(newNormX, newNormY)
 
                             val updatedQuad = when (targetCorner) {
-                                ActiveCorner.TOP_LEFT -> {
-                                    q.copy(
-                                        topLeft = PointF(
-                                            newPt.x.coerceAtMost(q.topRight.x - 0.04f),
-                                            newPt.y.coerceAtMost(q.bottomLeft.y - 0.04f)
-                                        )
-                                    )
-                                }
-                                ActiveCorner.TOP_RIGHT -> {
-                                    q.copy(
-                                        topRight = PointF(
-                                            newPt.x.coerceAtLeast(q.topLeft.x + 0.04f),
-                                            newPt.y.coerceAtMost(q.bottomRight.y - 0.04f)
-                                        )
-                                    )
-                                }
-                                ActiveCorner.BOTTOM_RIGHT -> {
-                                    q.copy(
-                                        bottomRight = PointF(
-                                            newPt.x.coerceAtLeast(q.bottomLeft.x + 0.04f),
-                                            newPt.y.coerceAtLeast(q.topRight.y + 0.04f)
-                                        )
-                                    )
-                                }
-                                ActiveCorner.BOTTOM_LEFT -> {
-                                    q.copy(
-                                        bottomLeft = PointF(
-                                            newPt.x.coerceAtMost(q.bottomRight.x - 0.04f),
-                                            newPt.y.coerceAtLeast(q.topLeft.y + 0.04f)
-                                        )
-                                    )
-                                }
+                                ActiveCorner.TOP_LEFT -> q.copy(topLeft = newPt)
+                                ActiveCorner.TOP_RIGHT -> q.copy(topRight = newPt)
+                                ActiveCorner.BOTTOM_RIGHT -> q.copy(bottomRight = newPt)
+                                ActiveCorner.BOTTOM_LEFT -> q.copy(bottomLeft = newPt)
                                 else -> q
                             }
 
@@ -229,36 +199,24 @@ fun CropOverlay(
 
                             val updatedQuad = when (targetEdge) {
                                 ActiveEdge.TOP -> {
-                                    if (currentLockedCorners.contains(ActiveCorner.TOP_LEFT) || currentLockedCorners.contains(ActiveCorner.TOP_RIGHT)) q
-                                    else {
-                                        val newTL = PointF(q.topLeft.x, (q.topLeft.y + dy).coerceIn(0.01f, q.bottomLeft.y - 0.04f))
-                                        val newTR = PointF(q.topRight.x, (q.topRight.y + dy).coerceIn(0.01f, q.bottomRight.y - 0.04f))
-                                        q.copy(topLeft = newTL, topRight = newTR)
-                                    }
+                                    val newTL = PointF(q.topLeft.x, (q.topLeft.y + dy).coerceIn(0.005f, 0.995f))
+                                    val newTR = PointF(q.topRight.x, (q.topRight.y + dy).coerceIn(0.005f, 0.995f))
+                                    q.copy(topLeft = newTL, topRight = newTR)
                                 }
                                 ActiveEdge.BOTTOM -> {
-                                    if (currentLockedCorners.contains(ActiveCorner.BOTTOM_LEFT) || currentLockedCorners.contains(ActiveCorner.BOTTOM_RIGHT)) q
-                                    else {
-                                        val newBL = PointF(q.bottomLeft.x, (q.bottomLeft.y + dy).coerceIn(q.topLeft.y + 0.04f, 0.99f))
-                                        val newBR = PointF(q.bottomRight.x, (q.bottomRight.y + dy).coerceIn(q.topRight.y + 0.04f, 0.99f))
-                                        q.copy(bottomLeft = newBL, bottomRight = newBR)
-                                    }
+                                    val newBL = PointF(q.bottomLeft.x, (q.bottomLeft.y + dy).coerceIn(0.005f, 0.995f))
+                                    val newBR = PointF(q.bottomRight.x, (q.bottomRight.y + dy).coerceIn(0.005f, 0.995f))
+                                    q.copy(bottomLeft = newBL, bottomRight = newBR)
                                 }
                                 ActiveEdge.LEFT -> {
-                                    if (currentLockedCorners.contains(ActiveCorner.TOP_LEFT) || currentLockedCorners.contains(ActiveCorner.BOTTOM_LEFT)) q
-                                    else {
-                                        val newTL = PointF((q.topLeft.x + dx).coerceIn(0.01f, q.topRight.x - 0.04f), q.topLeft.y)
-                                        val newBL = PointF((q.bottomLeft.x + dx).coerceIn(0.01f, q.bottomRight.x - 0.04f), q.bottomLeft.y)
-                                        q.copy(topLeft = newTL, bottomLeft = newBL)
-                                    }
+                                    val newTL = PointF((q.topLeft.x + dx).coerceIn(0.005f, 0.995f), q.topLeft.y)
+                                    val newBL = PointF((q.bottomLeft.x + dx).coerceIn(0.005f, 0.995f), q.bottomLeft.y)
+                                    q.copy(topLeft = newTL, bottomLeft = newBL)
                                 }
                                 ActiveEdge.RIGHT -> {
-                                    if (currentLockedCorners.contains(ActiveCorner.TOP_RIGHT) || currentLockedCorners.contains(ActiveCorner.BOTTOM_RIGHT)) q
-                                    else {
-                                        val newTR = PointF((q.topRight.x + dx).coerceIn(q.topLeft.x + 0.04f, 0.99f), q.topRight.y)
-                                        val newBR = PointF((q.bottomRight.x + dx).coerceIn(q.bottomLeft.x + 0.04f, 0.99f), q.bottomRight.y)
-                                        q.copy(topRight = newTR, bottomRight = newBR)
-                                    }
+                                    val newTR = PointF((q.topRight.x + dx).coerceIn(0.005f, 0.995f), q.topRight.y)
+                                    val newBR = PointF((q.bottomRight.x + dx).coerceIn(0.005f, 0.995f), q.bottomRight.y)
+                                    q.copy(topRight = newTR, bottomRight = newBR)
                                 }
                                 else -> q
                             }
@@ -304,13 +262,13 @@ fun CropOverlay(
 
             drawPath(
                 path = fullPath,
-                color = Color.Black.copy(alpha = 0.45f)
+                color = Color.Black.copy(alpha = 0.48f)
             )
 
             // Subtle highlight inside document quad
             drawPath(
                 path = quadPath,
-                color = Color(0xFF00E5D9).copy(alpha = 0.08f)
+                color = Color(0xFF00E5D9).copy(alpha = 0.09f)
             )
 
             // 2. Perspective Grid Lines (Rule of Thirds)
@@ -318,7 +276,6 @@ fun CropOverlay(
             for (i in 1 until gridSteps) {
                 val t = i.toFloat() / gridSteps
 
-                // Vertical grid lines
                 val topP = Offset(tl.x + t * (tr.x - tl.x), tl.y + t * (tr.y - tl.y))
                 val botP = Offset(bl.x + t * (br.x - bl.x), bl.y + t * (br.y - bl.y))
                 drawLine(
@@ -328,7 +285,6 @@ fun CropOverlay(
                     strokeWidth = 1.2.dp.toPx()
                 )
 
-                // Horizontal grid lines
                 val leftP = Offset(tl.x + t * (bl.x - tl.x), tl.y + t * (bl.y - tl.y))
                 val rightP = Offset(tr.x + t * (br.x - tr.x), tr.y + t * (br.y - tr.y))
                 drawLine(
@@ -376,8 +332,8 @@ fun CropOverlay(
                 val isSelected = selectedCorner == cornerType || activeDragCorner == cornerType
                 val isLocked = lockedCorners.contains(cornerType)
 
-                val outerRadius = if (isSelected) 20.dp.toPx() else 16.dp.toPx()
-                val innerRadius = if (isSelected) 9.dp.toPx() else 7.dp.toPx()
+                val outerRadius = if (isSelected) 22.dp.toPx() else 17.dp.toPx()
+                val innerRadius = if (isSelected) 10.dp.toPx() else 7.dp.toPx()
                 val handleColor = when {
                     isLocked -> Color(0xFFFF5252)
                     isSelected -> Color(0xFF00E5D9)
@@ -386,7 +342,7 @@ fun CropOverlay(
 
                 // Outer Shadow/Touch Ring
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.50f),
+                    color = Color.Black.copy(alpha = 0.55f),
                     radius = outerRadius + 4.dp.toPx(),
                     center = offset
                 )
@@ -401,7 +357,7 @@ fun CropOverlay(
 
                 // Semi-transparent background inside ring
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.3f),
+                    color = Color.Black.copy(alpha = 0.35f),
                     radius = outerRadius - 1.5.dp.toPx(),
                     center = offset
                 )
@@ -417,7 +373,7 @@ fun CropOverlay(
                 if (isLocked) {
                     drawCircle(
                         color = Color(0xFFFF5252),
-                        radius = 4.dp.toPx(),
+                        radius = 5.dp.toPx(),
                         center = Offset(offset.x + outerRadius, offset.y - outerRadius)
                     )
                 }
@@ -441,11 +397,11 @@ fun CropOverlay(
 
                 val cornerOffset = Offset(offsetX + cornerPt.x * drawnW, offsetY + cornerPt.y * drawnH)
 
-                val loupeRadiusPx = 52.dp.toPx()
-                val loupeCenter = if (cornerOffset.y < 140.dp.toPx()) {
-                    Offset(cornerOffset.x.coerceIn(loupeRadiusPx + 16.dp.toPx(), w - loupeRadiusPx - 16.dp.toPx()), cornerOffset.y + 120.dp.toPx())
+                val loupeRadiusPx = 54.dp.toPx()
+                val loupeCenter = if (cornerOffset.y < 150.dp.toPx()) {
+                    Offset(cornerOffset.x.coerceIn(loupeRadiusPx + 16.dp.toPx(), w - loupeRadiusPx - 16.dp.toPx()), cornerOffset.y + 125.dp.toPx())
                 } else {
-                    Offset(cornerOffset.x.coerceIn(loupeRadiusPx + 16.dp.toPx(), w - loupeRadiusPx - 16.dp.toPx()), cornerOffset.y - 120.dp.toPx())
+                    Offset(cornerOffset.x.coerceIn(loupeRadiusPx + 16.dp.toPx(), w - loupeRadiusPx - 16.dp.toPx()), cornerOffset.y - 125.dp.toPx())
                 }
 
                 // Target Line connecting corner point to loupe center
@@ -469,10 +425,7 @@ fun CropOverlay(
                 }
 
                 clipPath(loupeClipPath) {
-                    val zoomFactor = 2.5f
-                    val sampleSrcWidth = (drawnW / zoomFactor).toInt().coerceAtLeast(10)
-                    val sampleSrcHeight = (drawnH / zoomFactor).toInt().coerceAtLeast(10)
-
+                    val zoomFactor = 2.6f
                     val bmpPixelX = (cornerPt.x * bitmap.width).toInt()
                     val bmpPixelY = (cornerPt.y * bitmap.height).toInt()
 
@@ -492,21 +445,20 @@ fun CropOverlay(
                             dstSize = IntSize((loupeRadiusPx * 2).toInt(), (loupeRadiusPx * 2).toInt())
                         )
                     } catch (e: Exception) {
-                        // fallback solid color
                         drawCircle(color = Color.DarkGray, radius = loupeRadiusPx, center = loupeCenter)
                     }
 
                     // Loupe Crosshair Target
                     drawLine(
                         color = Color(0xFF00E5D9),
-                        start = Offset(loupeCenter.x - 14.dp.toPx(), loupeCenter.y),
-                        end = Offset(loupeCenter.x + 14.dp.toPx(), loupeCenter.y),
+                        start = Offset(loupeCenter.x - 16.dp.toPx(), loupeCenter.y),
+                        end = Offset(loupeCenter.x + 16.dp.toPx(), loupeCenter.y),
                         strokeWidth = 2.dp.toPx()
                     )
                     drawLine(
                         color = Color(0xFF00E5D9),
-                        start = Offset(loupeCenter.x, loupeCenter.y - 14.dp.toPx()),
-                        end = Offset(loupeCenter.x, loupeCenter.y + 14.dp.toPx()),
+                        start = Offset(loupeCenter.x, loupeCenter.y - 16.dp.toPx()),
+                        end = Offset(loupeCenter.x, loupeCenter.y + 16.dp.toPx()),
                         strokeWidth = 2.dp.toPx()
                     )
                 }

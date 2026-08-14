@@ -97,7 +97,7 @@ fun HomeScreen(
             ) {
                 Column {
                     Text(
-                        text = "DOCUMENT SEARCH",
+                        text = "SCANNIVO",
                         style = MaterialTheme.typography.displayLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -112,7 +112,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "App Malik / Owner: Amit Meena",
+                            text = "App Owner: Amit Meena",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -176,7 +176,7 @@ fun HomeScreen(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "App Malik: Amit Meena welcomes you to Document Search.",
+                                text = "App Owner: Amit Meena welcomes you to Scannivo.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
