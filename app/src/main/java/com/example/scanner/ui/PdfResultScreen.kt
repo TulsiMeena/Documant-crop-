@@ -258,7 +258,7 @@ fun PdfResultScreen(
 
     if (showExportDialog) {
         ExportImageDialog(
-            sourceImagePath = document.thumbnailPath,
+            sourceImagePath = if (File(document.pdfPath).exists()) document.pdfPath else document.thumbnailPath,
             documentTitle = document.title,
             onDismiss = { showExportDialog = false }
         )

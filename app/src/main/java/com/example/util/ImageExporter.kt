@@ -5,10 +5,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.pdf.PdfRenderer
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import java.io.ByteArrayOutputStream
@@ -52,6 +55,76 @@ object ImageExporter {
     )
 
     /**
+     * Obtains the native dimensions (width, height) of an image file or PDF document at [dpi].
+     */
+    fun getImageOrPdfDimensions(filePath: String, dpi: Int = 300): Pair<Int, Int>? {
+        val file = File(filePath)
+        if (!file.exists()) return null
+
+        return if (file.extension.equals("pdf", ignoreCase = true)) {
+            try {
+                val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(pfd)
+                if (renderer.pageCount > 0) {
+                    val page = renderer.openPage(0)
+                    val scale = dpi / 72.0f
+                    val w = (page.width * scale).toInt()
+                    val h = (page.height * scale).toInt()
+                    page.close()
+                    renderer.close()
+                    pfd.close()
+                    Pair(w, h)
+                } else {
+                    renderer.close()
+                    pfd.close()
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e("ImageExporter", "Error reading PDF dimensions", e)
+                null
+            }
+        } else {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(filePath, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) {
+                Pair(opts.outWidth, opts.outHeight)
+            } else null
+        }
+    }
+
+    /**
+     * Renders a PDF page to a high-resolution Bitmap at specified [targetDpi].
+     */
+    fun renderPdfPage(file: File, pageIndex: Int = 0, targetDpi: Int = 300): Bitmap? {
+        if (!file.exists()) return null
+        return try {
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(pfd)
+            if (pageIndex < 0 || pageIndex >= renderer.pageCount) {
+                renderer.close()
+                pfd.close()
+                return null
+            }
+            val page = renderer.openPage(pageIndex)
+            val scale = targetDpi / 72.0f
+            val width = (page.width * scale).toInt().coerceAtLeast(100)
+            val height = (page.height * scale).toInt().coerceAtLeast(100)
+
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.WHITE)
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+            page.close()
+            renderer.close()
+            pfd.close()
+            bitmap
+        } catch (e: Exception) {
+            Log.e("ImageExporter", "Error rendering PDF page to high-res Bitmap", e)
+            null
+        }
+    }
+
+    /**
      * Ultra High-Quality image export engine with high-fidelity resampling
      * and lossless/maximum-quality compression directly into phone Gallery.
      */
@@ -65,12 +138,18 @@ object ImageExporter {
         if (!srcFile.exists()) return null
 
         try {
-            val decodeOpts = BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-                inDither = false
-                inScaled = false
+            var bitmap: Bitmap? = if (srcFile.extension.equals("pdf", ignoreCase = true)) {
+                renderPdfPage(srcFile, 0, options.dpi)
+            } else {
+                val decodeOpts = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inDither = false
+                    inScaled = false
+                }
+                BitmapFactory.decodeFile(sourceImagePath, decodeOpts)
             }
-            var bitmap = BitmapFactory.decodeFile(sourceImagePath, decodeOpts) ?: return null
+
+            if (bitmap == null) return null
 
             val originalW = bitmap.width
             val originalH = bitmap.height
@@ -98,7 +177,7 @@ object ImageExporter {
                 }
             }
 
-            // High-fidelity scaling with filtering
+            // High-fidelity scaling with filtering if requested dimensions differ
             if (targetW != originalW || targetH != originalH) {
                 val scaled = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(scaled)
@@ -149,7 +228,7 @@ object ImageExporter {
 
     /**
      * Ultra high-clarity compression.
-     * When targetKb is null, outputs at 99-100% crystal quality.
+     * When targetKb is null, outputs at 100% crystal quality.
      */
     private fun compressToTargetKb(
         initialBitmap: Bitmap,

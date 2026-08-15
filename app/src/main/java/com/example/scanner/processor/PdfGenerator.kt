@@ -144,14 +144,18 @@ object PdfGenerator {
 
     private fun saveThumbnail(thumbsDir: File, bitmap: Bitmap): File {
         val thumbFile = File(thumbsDir, "thumb_${UUID.randomUUID()}.jpg")
-        val maxDim = 320
+        val maxDim = 1600
         val scale = minOf(1.0f, maxDim.toFloat() / maxOf(bitmap.width, bitmap.height))
-        val tw = (bitmap.width * scale).toInt()
-        val th = (bitmap.height * scale).toInt()
+        val tw = (bitmap.width * scale).toInt().coerceAtLeast(100)
+        val th = (bitmap.height * scale).toInt().coerceAtLeast(100)
 
-        val thumbBitmap = Bitmap.createScaledBitmap(bitmap, tw, th, true)
+        val thumbBitmap = if (scale < 1.0f) {
+            Bitmap.createScaledBitmap(bitmap, tw, th, true)
+        } else {
+            bitmap
+        }
         val fos = FileOutputStream(thumbFile)
-        thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos)
+        thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 98, fos)
         fos.flush()
         fos.close()
         return thumbFile

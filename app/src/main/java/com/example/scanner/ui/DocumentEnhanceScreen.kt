@@ -108,6 +108,7 @@ fun DocumentEnhanceScreen(
     var showAdjustPanel by remember { mutableStateOf(false) }
     var isHoldingToCompare by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var enhancedExportPath by remember { mutableStateOf<String?>(null) }
 
     // 1. Initial Image Loading & Downscaled Preview Creation
     LaunchedEffect(imagePath) {
@@ -274,7 +275,48 @@ fun DocumentEnhanceScreen(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.5f))
-                            .clickable { showExportDialog = true }
+                            .clickable {
+                                isProcessing = true
+                                processingMessage = "Preparing high-resolution scan..."
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val fullBmp = fullResSourceBitmap ?: BitmapFactory.decodeFile(imagePath)
+                                        if (fullBmp != null) {
+                                            val enhanced = DocumentEnhancer.enhance(
+                                                fullBmp,
+                                                selectedMode,
+                                                adjustParams
+                                            )
+                                            val outFile = File(
+                                                context.cacheDir,
+                                                "EXPORT_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+                                            )
+                                            val fos = FileOutputStream(outFile)
+                                            enhanced.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+                                            fos.flush()
+                                            fos.close()
+                                            withContext(Dispatchers.Main) {
+                                                isProcessing = false
+                                                enhancedExportPath = outFile.absolutePath
+                                                showExportDialog = true
+                                            }
+                                        } else {
+                                            withContext(Dispatchers.Main) {
+                                                isProcessing = false
+                                                enhancedExportPath = imagePath
+                                                showExportDialog = true
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("DocumentEnhanceScreen", "Error preparing export image", e)
+                                        withContext(Dispatchers.Main) {
+                                            isProcessing = false
+                                            enhancedExportPath = imagePath
+                                            showExportDialog = true
+                                        }
+                                    }
+                                }
+                            }
                             .padding(10.dp)
                             .testTag("export_image_top_button"),
                         contentAlignment = Alignment.Center
@@ -310,9 +352,10 @@ fun DocumentEnhanceScreen(
             }
 
             // Export Image Dialog (Custom dimensions px/in, target file size 30/50/100/500 KB, format JPG/PNG)
-            if (showExportDialog) {
+            val activeExportPath = enhancedExportPath
+            if (showExportDialog && activeExportPath != null) {
                 ExportImageDialog(
-                    sourceImagePath = imagePath,
+                    sourceImagePath = activeExportPath,
                     documentTitle = "Scan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}",
                     onDismiss = { showExportDialog = false }
                 )

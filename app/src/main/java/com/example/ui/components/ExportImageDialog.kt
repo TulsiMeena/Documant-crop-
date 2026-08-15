@@ -55,6 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun ExportImageDialog(
@@ -86,23 +87,20 @@ fun ExportImageDialog(
 
     var isProcessing by remember { mutableStateOf(false) }
 
-    // Read original image dimensions
-    LaunchedEffect(sourceImagePath) {
-        val file = File(sourceImagePath)
-        if (file.exists()) {
-            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(sourceImagePath, opts)
-            if (opts.outWidth > 0 && opts.outHeight > 0) {
-                origWidthPx = opts.outWidth
-                origHeightPx = opts.outHeight
-                widthPxText = opts.outWidth.toString()
-                heightPxText = opts.outHeight.toString()
+    // Read original image or PDF dimensions
+    LaunchedEffect(sourceImagePath, selectedDpi) {
+        val dims = ImageExporter.getImageOrPdfDimensions(sourceImagePath, selectedDpi)
+        if (dims != null) {
+            val (w, h) = dims
+            origWidthPx = w
+            origHeightPx = h
+            widthPxText = w.toString()
+            heightPxText = h.toString()
 
-                val wIn = String.format("%.1f", opts.outWidth.toFloat() / 300f)
-                val hIn = String.format("%.1f", opts.outHeight.toFloat() / 300f)
-                widthInchesText = wIn
-                heightInchesText = hIn
-            }
+            val wIn = String.format(Locale.US, "%.1f", w.toFloat() / selectedDpi.toFloat())
+            val hIn = String.format(Locale.US, "%.1f", h.toFloat() / selectedDpi.toFloat())
+            widthInchesText = wIn
+            heightInchesText = hIn
         }
     }
 
