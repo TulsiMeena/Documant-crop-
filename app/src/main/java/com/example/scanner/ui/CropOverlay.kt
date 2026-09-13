@@ -178,8 +178,8 @@ fun CropOverlay(
                         if (targetCorner != ActiveCorner.NONE) {
                             if (currentLockedCorners.contains(targetCorner)) return@detectDragGestures
 
-                            val newNormX = ((change.position.x - offsetX) / drawnW).coerceIn(0.005f, 0.995f)
-                            val newNormY = ((change.position.y - offsetY) / drawnH).coerceIn(0.005f, 0.995f)
+                            val newNormX = ((change.position.x - offsetX) / drawnW).coerceIn(0f, 1f)
+                            val newNormY = ((change.position.y - offsetY) / drawnH).coerceIn(0f, 1f)
                             val newPt = PointF(newNormX, newNormY)
 
                             val updatedQuad = when (targetCorner) {
@@ -199,23 +199,23 @@ fun CropOverlay(
 
                             val updatedQuad = when (targetEdge) {
                                 ActiveEdge.TOP -> {
-                                    val newTL = PointF(q.topLeft.x, (q.topLeft.y + dy).coerceIn(0.005f, 0.995f))
-                                    val newTR = PointF(q.topRight.x, (q.topRight.y + dy).coerceIn(0.005f, 0.995f))
+                                    val newTL = PointF(q.topLeft.x, (q.topLeft.y + dy).coerceIn(0f, 1f))
+                                    val newTR = PointF(q.topRight.x, (q.topRight.y + dy).coerceIn(0f, 1f))
                                     q.copy(topLeft = newTL, topRight = newTR)
                                 }
                                 ActiveEdge.BOTTOM -> {
-                                    val newBL = PointF(q.bottomLeft.x, (q.bottomLeft.y + dy).coerceIn(0.005f, 0.995f))
-                                    val newBR = PointF(q.bottomRight.x, (q.bottomRight.y + dy).coerceIn(0.005f, 0.995f))
+                                    val newBL = PointF(q.bottomLeft.x, (q.bottomLeft.y + dy).coerceIn(0f, 1f))
+                                    val newBR = PointF(q.bottomRight.x, (q.bottomRight.y + dy).coerceIn(0f, 1f))
                                     q.copy(bottomLeft = newBL, bottomRight = newBR)
                                 }
                                 ActiveEdge.LEFT -> {
-                                    val newTL = PointF((q.topLeft.x + dx).coerceIn(0.005f, 0.995f), q.topLeft.y)
-                                    val newBL = PointF((q.bottomLeft.x + dx).coerceIn(0.005f, 0.995f), q.bottomLeft.y)
+                                    val newTL = PointF((q.topLeft.x + dx).coerceIn(0f, 1f), q.topLeft.y)
+                                    val newBL = PointF((q.bottomLeft.x + dx).coerceIn(0f, 1f), q.bottomLeft.y)
                                     q.copy(topLeft = newTL, bottomLeft = newBL)
                                 }
                                 ActiveEdge.RIGHT -> {
-                                    val newTR = PointF((q.topRight.x + dx).coerceIn(0.005f, 0.995f), q.topRight.y)
-                                    val newBR = PointF((q.bottomRight.x + dx).coerceIn(0.005f, 0.995f), q.bottomRight.y)
+                                    val newTR = PointF((q.topRight.x + dx).coerceIn(0f, 1f), q.topRight.y)
+                                    val newBR = PointF((q.bottomRight.x + dx).coerceIn(0f, 1f), q.bottomRight.y)
                                     q.copy(topRight = newTR, bottomRight = newBR)
                                 }
                                 else -> q

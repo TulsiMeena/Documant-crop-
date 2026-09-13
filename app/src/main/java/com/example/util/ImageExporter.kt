@@ -93,7 +93,8 @@ object ImageExporter {
     }
 
     /**
-     * Renders a PDF page to a high-resolution Bitmap at specified [targetDpi].
+     * Renders a PDF page to a high-resolution Bitmap at specified [targetDpi],
+     * automatically trimming any artificial white paper margins / letterbox borders.
      */
     fun renderPdfPage(file: File, pageIndex: Int = 0, targetDpi: Int = 300): Bitmap? {
         if (!file.exists()) return null
@@ -110,17 +111,89 @@ object ImageExporter {
             val width = (page.width * scale).toInt().coerceAtLeast(100)
             val height = (page.height * scale).toInt().coerceAtLeast(100)
 
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
+            val rawBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(rawBitmap)
             canvas.drawColor(Color.WHITE)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+            page.render(rawBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
             page.close()
             renderer.close()
             pfd.close()
-            bitmap
+            trimWhiteBorders(rawBitmap)
         } catch (e: Exception) {
             Log.e("ImageExporter", "Error rendering PDF page to high-res Bitmap", e)
             null
+        }
+    }
+
+    /**
+     * Intelligently removes solid white letterbox / pillarbox borders around an image.
+     * Eliminates any unwanted surrounding white margin.
+     */
+    fun trimWhiteBorders(bitmap: Bitmap, tolerance: Int = 246): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 50 || h <= 50) return bitmap
+
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        fun isNearWhite(color: Int): Boolean {
+            val a = (color ushr 24) and 0xFF
+            if (a < 20) return true
+            val r = (color shr 16) and 0xFF
+            val g = (color shr 8) and 0xFF
+            val b = color and 0xFF
+            return r >= tolerance && g >= tolerance && b >= tolerance
+        }
+
+        var top = 0
+        var bottom = h - 1
+        var left = 0
+        var right = w - 1
+
+        topLoop@ while (top < bottom) {
+            for (x in 0 until w) {
+                if (!isNearWhite(pixels[top * w + x])) {
+                    break@topLoop
+                }
+            }
+            top++
+        }
+
+        bottomLoop@ while (bottom > top) {
+            for (x in 0 until w) {
+                if (!isNearWhite(pixels[bottom * w + x])) {
+                    break@bottomLoop
+                }
+            }
+            bottom--
+        }
+
+        leftLoop@ while (left < right) {
+            for (y in top..bottom) {
+                if (!isNearWhite(pixels[y * w + left])) {
+                    break@leftLoop
+                }
+            }
+            left++
+        }
+
+        rightLoop@ while (right > left) {
+            for (y in top..bottom) {
+                if (!isNearWhite(pixels[y * w + right])) {
+                    break@rightLoop
+                }
+            }
+            right--
+        }
+
+        val trimmedW = right - left + 1
+        val trimmedH = bottom - top + 1
+
+        return if (trimmedW > 50 && trimmedH > 50 && (trimmedW < w || trimmedH < h)) {
+            Bitmap.createBitmap(bitmap, left, top, trimmedW, trimmedH)
+        } else {
+            bitmap
         }
     }
 

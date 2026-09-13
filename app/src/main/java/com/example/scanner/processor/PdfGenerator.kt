@@ -86,14 +86,14 @@ object PdfGenerator {
             }
 
             // Determine PDF Page Dimensions (Points: 1 pt = 1/72 inch)
+            val isStandardPaper = pageSizeOption == "A4" || pageSizeOption == "Letter"
             val (pageWidthPt, pageHeightPt) = when (pageSizeOption) {
                 "A4" -> Pair(595, 842)
                 "Letter" -> Pair(612, 792)
-                else -> { // "Auto" / "Original"
-                    val targetW = 595
-                    val targetH = (targetW * (bitmap.height.toFloat() / bitmap.width.toFloat())).toInt()
-                        .coerceIn(200, 1200)
-                    Pair(targetW, targetH)
+                else -> { // "Auto" / "Original" - Fit page exactly to document aspect ratio (zero extra margins)
+                    val baseW = 595
+                    val calcH = (baseW * (bitmap.height.toFloat() / bitmap.width.toFloat())).toInt()
+                    Pair(baseW, calcH.coerceIn(100, 3000))
                 }
             }
 
@@ -101,26 +101,23 @@ object PdfGenerator {
             val pdfPage = pdfDocument.startPage(pageInfo)
             val canvas: Canvas = pdfPage.canvas
 
-            // Fill white background
-            canvas.drawColor(Color.WHITE)
-
-            // Draw bitmap fitted inside page with margin
-            val marginPt = 12f
-            val availW = pageWidthPt - (marginPt * 2)
-            val availH = pageHeightPt - (marginPt * 2)
-
-            val srcW = bitmap.width.toFloat()
-            val srcH = bitmap.height.toFloat()
-
-            val scale = minOf(availW / srcW, availH / srcH)
-            val destW = srcW * scale
-            val destH = srcH * scale
-
-            val destLeft = marginPt + (availW - destW) / 2f
-            val destTop = marginPt + (availH - destH) / 2f
-
-            val destRect = RectF(destLeft, destTop, destLeft + destW, destTop + destH)
-            canvas.drawBitmap(bitmap, null, destRect, paint)
+            if (!isStandardPaper) {
+                // Borderless edge-to-edge drawing for Auto/Original scan
+                val destRect = RectF(0f, 0f, pageWidthPt.toFloat(), pageHeightPt.toFloat())
+                canvas.drawBitmap(bitmap, null, destRect, paint)
+            } else {
+                // For standard paper sizes, fit cleanly without artificial margins
+                canvas.drawColor(Color.WHITE)
+                val srcW = bitmap.width.toFloat()
+                val srcH = bitmap.height.toFloat()
+                val scale = minOf(pageWidthPt.toFloat() / srcW, pageHeightPt.toFloat() / srcH)
+                val destW = srcW * scale
+                val destH = srcH * scale
+                val destLeft = (pageWidthPt - destW) / 2f
+                val destTop = (pageHeightPt - destH) / 2f
+                val destRect = RectF(destLeft, destTop, destLeft + destW, destTop + destH)
+                canvas.drawBitmap(bitmap, null, destRect, paint)
+            }
 
             pdfDocument.finishPage(pdfPage)
         }
@@ -144,7 +141,7 @@ object PdfGenerator {
 
     private fun saveThumbnail(thumbsDir: File, bitmap: Bitmap): File {
         val thumbFile = File(thumbsDir, "thumb_${UUID.randomUUID()}.jpg")
-        val maxDim = 1600
+        val maxDim = 4096
         val scale = minOf(1.0f, maxDim.toFloat() / maxOf(bitmap.width, bitmap.height))
         val tw = (bitmap.width * scale).toInt().coerceAtLeast(100)
         val th = (bitmap.height * scale).toInt().coerceAtLeast(100)
@@ -155,7 +152,7 @@ object PdfGenerator {
             bitmap
         }
         val fos = FileOutputStream(thumbFile)
-        thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 98, fos)
+        thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos)
         fos.flush()
         fos.close()
         return thumbFile

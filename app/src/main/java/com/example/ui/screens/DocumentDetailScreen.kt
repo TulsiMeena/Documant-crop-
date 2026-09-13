@@ -315,7 +315,7 @@ fun DocumentDetailScreen(
     // Export Image Dialog (Custom dimensions, format JPG/PNG, compression KB limit)
     if (showExportDialog) {
         ExportImageDialog(
-            sourceImagePath = if (File(document.pdfPath).exists()) document.pdfPath else document.thumbnailPath,
+            sourceImagePath = if (File(document.thumbnailPath).exists()) document.thumbnailPath else document.pdfPath,
             documentTitle = document.title,
             onDismiss = { showExportDialog = false }
         )
