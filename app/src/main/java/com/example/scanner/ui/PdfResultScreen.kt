@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.data.local.entity.ScannedDocumentEntity
 import com.example.ui.components.ExportImageDialog
+import com.example.ui.components.SavePdfDialog
 import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import com.example.util.IntentUtils
@@ -58,6 +59,7 @@ fun PdfResultScreen(
 ) {
     val context = LocalContext.current
     var showExportDialog by remember { mutableStateOf(false) }
+    var showSavePdfDialog by remember { mutableStateOf(false) }
 
     val thumbnailBmp = remember(document.thumbnailPath) {
         try {
@@ -208,11 +210,20 @@ fun PdfResultScreen(
                 }
             }
 
-            // Primary Action Buttons (Open PDF | Share | Save to Gallery | Done)
+            // Primary Action Buttons (Save PDF to Phone | Open PDF | Share | Save to Gallery | Done)
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Main Highlight Button: Save PDF to Phone with custom size options
+                ScanovaPrimaryButton(
+                    text = "Save PDF to Phone (500KB, 1MB, 2MB)",
+                    onClick = { showSavePdfDialog = true },
+                    icon = Icons.Default.Download,
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "pdf_result_save_pdf_button"
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -246,7 +257,7 @@ fun PdfResultScreen(
                     testTag = "pdf_result_export_image_button"
                 )
 
-                ScanovaPrimaryButton(
+                ScanovaOutlinedButton(
                     text = "Done",
                     onClick = onDone,
                     modifier = Modifier.fillMaxWidth(),
@@ -254,6 +265,14 @@ fun PdfResultScreen(
                 )
             }
         }
+    }
+
+    if (showSavePdfDialog) {
+        SavePdfDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showSavePdfDialog = false }
+        )
     }
 
     if (showExportDialog) {

@@ -83,6 +83,7 @@ class DocumentSessionViewModel : ViewModel() {
         context: Context,
         title: String,
         pageSizeOption: String,
+        targetSizeKb: Int? = null,
         onSuccess: (ScannedDocumentEntity) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -100,7 +101,8 @@ class DocumentSessionViewModel : ViewModel() {
                     context = context,
                     rawDocumentTitle = title,
                     pages = currentPages,
-                    pageSizeOption = pageSizeOption
+                    pageSizeOption = pageSizeOption,
+                    targetSizeKb = targetSizeKb
                 )
 
                 val docEntity = ScannedDocumentEntity(

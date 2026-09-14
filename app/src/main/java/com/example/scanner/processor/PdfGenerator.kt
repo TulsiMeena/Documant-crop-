@@ -11,7 +11,9 @@ import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import android.util.Log
 import com.example.scanner.model.ScannedPage
+import com.example.util.PdfCompressor
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -34,7 +36,8 @@ object PdfGenerator {
         context: Context,
         rawDocumentTitle: String,
         pages: List<ScannedPage>,
-        pageSizeOption: String = "Auto"
+        pageSizeOption: String = "Auto",
+        targetSizeKb: Int? = null
     ): PdfResult {
         require(pages.isNotEmpty()) { "Cannot create PDF with empty pages list" }
 
@@ -129,13 +132,29 @@ object PdfGenerator {
         fos.close()
         pdfDocument.close()
 
+        // 5. If user requested a custom target size limit (e.g. 500 KB, 1 MB, 2 MB), compress to meet it
+        val finalPdfFile = if (targetSizeKb != null && targetSizeKb > 0 && pdfFile.length() > targetSizeKb * 1024L) {
+            val compressed = PdfCompressor.compressPdf(context, pdfFile, targetSizeKb)
+            if (compressed != pdfFile && compressed.exists()) {
+                // Copy compressed content over pdfFile
+                FileInputStream(compressed).use { inStream ->
+                    FileOutputStream(pdfFile).use { outStream ->
+                        inStream.copyTo(outStream)
+                    }
+                }
+            }
+            pdfFile
+        } else {
+            pdfFile
+        }
+
         val thumbFile = firstPageThumbnailFile ?: File(thumbsDir, "thumb_${UUID.randomUUID()}.jpg")
 
         return PdfResult(
-            pdfFile = pdfFile,
+            pdfFile = finalPdfFile,
             thumbnailFile = thumbFile,
             pageCount = sortedPages.size,
-            fileSizeBytes = pdfFile.length()
+            fileSizeBytes = finalPdfFile.length()
         )
     }
 

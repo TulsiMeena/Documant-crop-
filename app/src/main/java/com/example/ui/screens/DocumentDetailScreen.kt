@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.entity.ScannedDocumentEntity
 import com.example.ui.components.ExportImageDialog
+import com.example.ui.components.SavePdfDialog
 import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import com.example.ui.components.ScanovaTopBar
@@ -78,6 +79,7 @@ fun DocumentDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showFileMissingDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showSavePdfDialog by remember { mutableStateOf(false) }
 
     val pdfFile = remember(document.pdfPath) { File(document.pdfPath) }
     val thumbnailBmp = remember(document.thumbnailPath) {
@@ -257,8 +259,23 @@ fun DocumentDetailScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Primary Action: Open PDF
+                    // Primary Action: Save PDF to Phone (Downloads) with custom size limits
                     ScanovaPrimaryButton(
+                        text = "Save PDF to Phone (500KB, 1MB, 2MB)",
+                        onClick = {
+                            if (!pdfFile.exists()) {
+                                showFileMissingDialog = true
+                            } else {
+                                showSavePdfDialog = true
+                            }
+                        },
+                        icon = Icons.Default.Download,
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "detail_save_pdf_button"
+                    )
+
+                    // Open PDF Action
+                    ScanovaOutlinedButton(
                         text = "Open PDF",
                         onClick = { openPdfFile() },
                         icon = Icons.Default.OpenInNew,
@@ -268,7 +285,7 @@ fun DocumentDetailScreen(
 
                     // Save Image to Gallery Action
                     ScanovaOutlinedButton(
-                        text = "Save Image to Gallery (Custom Size & px/in)",
+                        text = "Save Image to Gallery (JPG/PNG)",
                         onClick = { showExportDialog = true },
                         icon = Icons.Default.Download,
                         modifier = Modifier.fillMaxWidth(),
@@ -310,6 +327,15 @@ fun DocumentDetailScreen(
                 }
             }
         }
+    }
+
+    // Save PDF to Phone Dialog (Custom size limits: 500KB, 1MB, 2MB, Custom KB)
+    if (showSavePdfDialog) {
+        SavePdfDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showSavePdfDialog = false }
+        )
     }
 
     // Export Image Dialog (Custom dimensions, format JPG/PNG, compression KB limit)

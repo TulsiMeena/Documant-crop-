@@ -76,6 +76,7 @@ import com.example.data.local.entity.ScannedDocumentEntity
 import com.example.scanner.DocumentSessionViewModel
 import com.example.scanner.model.ScannedPage
 import com.example.ui.components.ExportImageDialog
+import com.example.ui.components.PdfTargetSizePreset
 import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import java.io.File
@@ -104,6 +105,9 @@ fun DocumentSessionScreen(
     var showPdfConfigDialog by remember { mutableStateOf(false) }
     var pdfTitleInput by remember { mutableStateOf("") }
     var selectedPageSize by remember { mutableStateOf("Auto") }
+    var selectedPdfSizePreset by remember { mutableStateOf(PdfTargetSizePreset.ORIGINAL) }
+    var customPdfSizeInput by remember { mutableStateOf("500") }
+    var customPdfUnitIsMb by remember { mutableStateOf(false) }
     var pdfErrorMessage by remember { mutableStateOf<String?>(null) }
     var pageToExport by remember { mutableStateOf<ScannedPage?>(null) }
 
@@ -640,6 +644,121 @@ fun DocumentSessionScreen(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Target PDF Size",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val presets = listOf(
+                        PdfTargetSizePreset.ORIGINAL,
+                        PdfTargetSizePreset.TWO_MB,
+                        PdfTargetSizePreset.ONE_MB,
+                        PdfTargetSizePreset.FIVE_HUNDRED_KB,
+                        PdfTargetSizePreset.CUSTOM
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        presets.take(4).forEach { preset ->
+                            val isSel = selectedPdfSizePreset == preset
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { selectedPdfSizePreset = preset }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = preset.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Custom preset chip
+                    val isCustom = selectedPdfSizePreset == PdfTargetSizePreset.CUSTOM
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { selectedPdfSizePreset = PdfTargetSizePreset.CUSTOM }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Custom File Size Limit",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isCustom) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isCustom) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (isCustom) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = customPdfSizeInput,
+                                onValueChange = { customPdfSizeInput = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text("Limit") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (!customPdfUnitIsMb) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                        .clickable { customPdfUnitIsMb = false }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "KB",
+                                        color = if (!customPdfUnitIsMb) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (customPdfUnitIsMb) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                        .clickable { customPdfUnitIsMb = true }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "MB",
+                                        color = if (customPdfUnitIsMb) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -647,10 +766,24 @@ fun DocumentSessionScreen(
                     text = "Generate PDF",
                     onClick = {
                         showPdfConfigDialog = false
+
+                        val targetKb: Int? = when (selectedPdfSizePreset) {
+                            PdfTargetSizePreset.ORIGINAL -> null
+                            PdfTargetSizePreset.TWO_MB -> 2048
+                            PdfTargetSizePreset.ONE_MB -> 1024
+                            PdfTargetSizePreset.FIVE_HUNDRED_KB -> 500
+                            PdfTargetSizePreset.CUSTOM -> {
+                                val num = customPdfSizeInput.trim().toFloatOrNull() ?: 500f
+                                if (customPdfUnitIsMb) (num * 1024).toInt().coerceAtLeast(50)
+                                else num.toInt().coerceAtLeast(50)
+                            }
+                        }
+
                         viewModel.createPdf(
                             context = context,
                             title = pdfTitleInput,
                             pageSizeOption = selectedPageSize,
+                            targetSizeKb = targetKb,
                             onSuccess = { createdDoc ->
                                 onPdfCreated(createdDoc)
                             },
