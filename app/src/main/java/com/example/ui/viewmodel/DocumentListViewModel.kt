@@ -85,4 +85,36 @@ class DocumentListViewModel(application: Application) : AndroidViewModel(applica
             }
         }
     }
+
+    fun updateDocumentPages(doc: ScannedDocumentEntity, newPageCount: Int, newSizeBytes: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = doc.copy(
+                pageCount = newPageCount,
+                fileSizeBytes = newSizeBytes
+            )
+            repository.updateDocument(updated)
+        }
+    }
+
+    fun addNewDocument(
+        title: String,
+        pdfPath: String,
+        thumbnailPath: String,
+        pageCount: Int,
+        fileSizeBytes: Long
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val entity = ScannedDocumentEntity(
+                id = java.util.UUID.randomUUID().toString(),
+                title = title,
+                pdfPath = pdfPath,
+                thumbnailPath = thumbnailPath,
+                pageCount = pageCount,
+                fileSizeBytes = fileSizeBytes,
+                ocrText = "",
+                createdAt = System.currentTimeMillis()
+            )
+            repository.insertDocument(entity)
+        }
+    }
 }

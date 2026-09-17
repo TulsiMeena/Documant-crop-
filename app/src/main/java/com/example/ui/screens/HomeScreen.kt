@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Notifications
@@ -42,7 +43,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.entity.ScannedDocumentEntity
 import com.example.ui.components.EmptyState
+import com.example.ui.components.MergePdfDialog
 import com.example.ui.components.ScanovaPrimaryButton
 import com.example.ui.viewmodel.DocumentListViewModel
 import com.example.util.WelcomeNotificationHelper
@@ -75,6 +79,7 @@ fun HomeScreen(
     val scrollState = rememberScrollState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val documents by viewModel.filteredDocuments.collectAsState()
+    var showMergeDialog by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -371,6 +376,61 @@ fun HomeScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Merge PDFs Action (PDF जोड़ना)
+            OutlinedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { showMergeDialog = true }
+                    .testTag("merge_pdfs_card"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CallMerge,
+                            contentDescription = "Merge PDFs",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Merge PDFs (PDF जोड़ना)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Combine multiple PDF files into a single document",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(28.dp))
 
             // 6. DOCUMENTS & SEARCH RESULTS SECTION
@@ -433,5 +493,21 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showMergeDialog) {
+        MergePdfDialog(
+            initialDocuments = documents,
+            onDismiss = { showMergeDialog = false },
+            onSuccess = { mergedFile ->
+                viewModel.addNewDocument(
+                    title = mergedFile.nameWithoutExtension,
+                    pdfPath = mergedFile.absolutePath,
+                    thumbnailPath = "",
+                    pageCount = 1,
+                    fileSizeBytes = mergedFile.length()
+                )
+            }
+        )
     }
 }

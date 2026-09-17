@@ -31,4 +31,22 @@ class ExampleUnitTest {
     assertEquals(2048, PdfTargetSizePreset.TWO_MB.kb)
     assertNull(PdfTargetSizePreset.ORIGINAL.kb)
   }
+
+  @Test
+  fun testWatermarkOptionsDefaults() {
+    val config = com.example.util.WatermarkOptions(text = "CONFIDENTIAL")
+    assertEquals("CONFIDENTIAL", config.text)
+    assertEquals(com.example.util.WatermarkPosition.CENTER_DIAGONAL, config.position)
+    assertEquals(0.25f, config.opacity, 0.01f)
+    assertEquals(36f, config.textSizeSp, 0.01f)
+  }
+
+  @Test
+  fun testWatermarkPositions() {
+    val positions = com.example.util.WatermarkPosition.values()
+    assertTrue(positions.contains(com.example.util.WatermarkPosition.CENTER_DIAGONAL))
+    assertTrue(positions.contains(com.example.util.WatermarkPosition.CENTER_HORIZONTAL))
+    assertTrue(positions.contains(com.example.util.WatermarkPosition.TOP_BANNER))
+    assertTrue(positions.contains(com.example.util.WatermarkPosition.BOTTOM_BANNER))
+  }
 }

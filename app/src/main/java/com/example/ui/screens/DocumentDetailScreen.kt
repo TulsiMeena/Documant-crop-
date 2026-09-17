@@ -19,9 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
@@ -51,13 +55,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.entity.ScannedDocumentEntity
+import com.example.ui.components.EditPdfDialog
 import com.example.ui.components.ExportImageDialog
+import com.example.ui.components.LockPdfDialog
 import com.example.ui.components.SavePdfDialog
 import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import com.example.ui.components.ScanovaTopBar
+import com.example.ui.components.SplitPdfDialog
+import com.example.ui.components.WatermarkSignatureDialog
 import com.example.ui.viewmodel.DocumentListViewModel
 import com.example.util.IntentUtils
+import com.example.util.PdfCompressor
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,6 +89,13 @@ fun DocumentDetailScreen(
     var showFileMissingDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showSavePdfDialog by remember { mutableStateOf(false) }
+    var showEditPdfDialog by remember { mutableStateOf(false) }
+    var showLockPdfDialog by remember { mutableStateOf(false) }
+    var showWatermarkSignatureDialog by remember { mutableStateOf(false) }
+    var showSplitPdfDialog by remember { mutableStateOf(false) }
+
+    var currentPageCount by remember(document.pageCount) { mutableStateOf(document.pageCount) }
+    var currentFileSizeBytes by remember(document.fileSizeBytes) { mutableStateOf(document.fileSizeBytes) }
 
     val pdfFile = remember(document.pdfPath) { File(document.pdfPath) }
     val thumbnailBmp = remember(document.thumbnailPath) {
@@ -188,8 +204,8 @@ fun DocumentDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        MetadataBadge(label = "Pages", value = "${document.pageCount}")
-                        MetadataBadge(label = "Size", value = fileSizeFormatted)
+                        MetadataBadge(label = "Pages", value = "$currentPageCount")
+                        MetadataBadge(label = "Size", value = PdfCompressor.formatFileSize(currentFileSizeBytes))
                         MetadataBadge(
                             label = "Created",
                             value = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(document.createdAt))
@@ -324,6 +340,69 @@ fun DocumentDetailScreen(
                             testTag = "detail_delete_button"
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // PDF Tools Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "PDF Editing & Security Tools",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ScanovaOutlinedButton(
+                                    text = "Edit Pages",
+                                    onClick = { showEditPdfDialog = true },
+                                    icon = Icons.Default.Layers,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ScanovaOutlinedButton(
+                                    text = "Lock PDF",
+                                    onClick = { showLockPdfDialog = true },
+                                    icon = Icons.Default.Lock,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ScanovaOutlinedButton(
+                                    text = "Watermark & Sign",
+                                    onClick = { showWatermarkSignatureDialog = true },
+                                    icon = Icons.Default.Draw,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ScanovaOutlinedButton(
+                                    text = "Split PDF",
+                                    onClick = { showSplitPdfDialog = true },
+                                    icon = Icons.Default.CallSplit,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -430,6 +509,47 @@ fun DocumentDetailScreen(
                     Text(text = "Cancel")
                 }
             }
+        )
+    }
+
+    // Edit PDF Pages Dialog (Reorder, Rotate, Delete, Add)
+    if (showEditPdfDialog) {
+        EditPdfDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showEditPdfDialog = false },
+            onPdfUpdated = { _, newPageCount, newSizeBytes ->
+                currentPageCount = newPageCount
+                currentFileSizeBytes = newSizeBytes
+                viewModel.updateDocumentPages(document, newPageCount, newSizeBytes)
+            }
+        )
+    }
+
+    // Lock PDF with Password Protection
+    if (showLockPdfDialog) {
+        LockPdfDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showLockPdfDialog = false }
+        )
+    }
+
+    // Digital Signature & Custom Watermark Dialog
+    if (showWatermarkSignatureDialog) {
+        WatermarkSignatureDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showWatermarkSignatureDialog = false }
+        )
+    }
+
+    // Split / Extract PDF Dialog
+    if (showSplitPdfDialog) {
+        SplitPdfDialog(
+            sourcePdfPath = document.pdfPath,
+            documentTitle = document.title,
+            onDismiss = { showSplitPdfDialog = false }
         )
     }
 }
