@@ -19,6 +19,8 @@ class UserPreferencesRepository(private val context: Context) {
         val APP_THEME = stringPreferencesKey("app_theme") // "SYSTEM", "LIGHT", "DARK"
         val DEFAULT_SCAN_MODE = stringPreferencesKey("default_scan_mode") // "AUTO", "COLOR", "BW"
         val AUTO_CROP_ENABLED = booleanPreferencesKey("auto_crop_enabled")
+        val GAME_DISGUISE_ENABLED = booleanPreferencesKey("game_disguise_enabled")
+        val GAME_DISGUISE_PIN = stringPreferencesKey("game_disguise_pin")
     }
 
     val isOnboardingCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -35,6 +37,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     val autoCropEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[AUTO_CROP_ENABLED] ?: true
+    }
+
+    val gameDisguiseEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[GAME_DISGUISE_ENABLED] ?: false
+    }
+
+    val gameDisguisePin: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[GAME_DISGUISE_PIN] ?: ""
     }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
@@ -58,6 +68,18 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setAutoCropEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[AUTO_CROP_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setGameDisguiseEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[GAME_DISGUISE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setGameDisguisePin(pin: String) {
+        context.dataStore.edit { preferences ->
+            preferences[GAME_DISGUISE_PIN] = pin
         }
     }
 }

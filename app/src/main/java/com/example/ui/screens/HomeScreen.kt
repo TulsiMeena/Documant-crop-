@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,6 +74,8 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onViewAllClick: () -> Unit,
     onDocumentClick: (ScannedDocumentEntity) -> Unit,
+    gameDisguiseEnabled: Boolean = false,
+    onEnterGameDisguise: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -125,15 +128,30 @@ fun HomeScreen(
                     }
                 }
 
-                IconButton(
-                    onClick = onSettingsClick,
-                    modifier = Modifier.testTag("home_settings_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (gameDisguiseEnabled) {
+                        IconButton(
+                            onClick = onEnterGameDisguise,
+                            modifier = Modifier.testTag("home_game_disguise_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SportsEsports,
+                                contentDescription = "Camouflage as Game",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier.testTag("home_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
                 }
             }
 

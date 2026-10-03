@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
@@ -20,10 +21,12 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,7 +55,7 @@ fun LockPdfDialog(
     sourcePdfPath: String,
     documentTitle: String,
     onDismiss: () -> Unit,
-    onSuccess: (File) -> Unit = {}
+    onSuccess: (lockedFile: File, replaceOriginal: Boolean) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -60,12 +63,14 @@ fun LockPdfDialog(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var replaceOriginal by remember { mutableStateOf(true) }
     var isSubmitting by remember { mutableStateOf(false) }
 
     var lockedPdfFile by remember { mutableStateOf<File?>(null) }
     var showSuccessDialog by remember { mutableStateOf(false) }
 
-    val passwordsMatch = password.isNotEmpty() && password == confirmPassword
+    val isPasswordValid = password.length >= 3
+    val passwordsMatch = isPasswordValid && password == confirmPassword
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
@@ -83,10 +88,10 @@ fun LockPdfDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Set a password to encrypt \"$documentTitle\". Any PDF reader will require this password to view the document.",
+                    text = "Set a secure password for \"$documentTitle\". Any PDF reader will strictly require this password to view the document.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -112,7 +117,7 @@ fun LockPdfDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "128-bit standard PDF encryption",
+                            text = "Standard 128-bit AES/RC4 PDF Encryption",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -125,6 +130,7 @@ fun LockPdfDialog(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text("Password") },
+                    placeholder = { Text("At least 3 characters") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -157,6 +163,51 @@ fun LockPdfDialog(
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                 )
+
+                // Replace Original Switch
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Lock this document directly",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (replaceOriginal) "Replaces original with password-protected PDF" else "Saves as a new copy in your documents",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = replaceOriginal,
+                            onCheckedChange = { replaceOriginal = it },
+                            enabled = !isSubmitting
+                        )
+                    }
+                }
+
+                if (isSubmitting) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Encrypting PDF document...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -169,8 +220,21 @@ fun LockPdfDialog(
                     scope.launch(Dispatchers.IO) {
                         try {
                             val sourceFile = File(sourcePdfPath)
+                            if (!sourceFile.exists()) {
+                                withContext(Dispatchers.Main) {
+                                    isSubmitting = false
+                                    Toast.makeText(context, "Original PDF file not found", Toast.LENGTH_SHORT).show()
+                                }
+                                return@launch
+                            }
+
                             val outDir = File(context.getExternalFilesDir(null), "LockedPdfs").apply { mkdirs() }
-                            val outFile = File(outDir, "${sourceFile.nameWithoutExtension}_protected.pdf")
+                            val outFile = if (replaceOriginal) {
+                                // Write to temporary protected file then replace
+                                File(outDir, "${sourceFile.nameWithoutExtension}_protected_${System.currentTimeMillis()}.pdf")
+                            } else {
+                                File(outDir, "${sourceFile.nameWithoutExtension}_protected.pdf")
+                            }
 
                             val ok = PdfSecurityUtil.protectPdf(
                                 context = context,
@@ -181,18 +245,18 @@ fun LockPdfDialog(
 
                             withContext(Dispatchers.Main) {
                                 isSubmitting = false
-                                if (ok) {
+                                if (ok && outFile.exists() && outFile.length() > 0) {
                                     lockedPdfFile = outFile
                                     showSuccessDialog = true
-                                    onSuccess(outFile)
+                                    onSuccess(outFile, replaceOriginal)
                                 } else {
-                                    Toast.makeText(context, "Failed to lock PDF", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Failed to lock PDF. Please try again.", Toast.LENGTH_LONG).show()
                                 }
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
                                 isSubmitting = false
-                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -217,31 +281,42 @@ fun LockPdfDialog(
                 showSuccessDialog = false
                 onDismiss()
             },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
             title = {
                 Text("PDF Locked Successfully", fontWeight = FontWeight.Bold)
             },
             text = {
-                Column {
-                    Text("The PDF is now encrypted with your password.")
-                    Spacer(modifier = Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("The PDF is now encrypted with 128-bit password protection.")
                     Text(
-                        text = file.name,
+                        text = "Password: \"$password\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Anyone opening this PDF in any viewer (Adobe, Drive, Files) will need to enter this password.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
             confirmButton = {
-                TextButton(
+                ScanovaPrimaryButton(
+                    text = "Open PDF",
                     onClick = {
                         IntentUtils.openPdf(context, file)
                         showSuccessDialog = false
                         onDismiss()
                     }
-                ) {
-                    Text("Open PDF")
-                }
+                )
             },
             dismissButton = {
                 TextButton(
@@ -257,3 +332,4 @@ fun LockPdfDialog(
         )
     }
 }
+

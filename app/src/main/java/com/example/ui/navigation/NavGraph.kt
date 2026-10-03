@@ -31,6 +31,7 @@ import com.example.scanner.ui.DocumentSessionScreen
 import com.example.scanner.ui.PdfResultScreen
 import com.example.scanner.ui.PerspectiveCropScreen
 import com.example.ui.screens.DocumentDetailScreen
+import com.example.ui.screens.GameDisguiseScreen
 import com.example.ui.screens.OcrScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SplashScreen
@@ -55,6 +56,7 @@ object Destinations {
     const val PDF_RESULT = "pdf_result"
     const val DOCUMENT_DETAIL = "document_detail"
     const val OCR = "ocr"
+    const val GAME_DISGUISE = "game_disguise"
 }
 
 @Composable
@@ -67,6 +69,8 @@ fun ScanovaNavGraph(
     val scope = rememberCoroutineScope()
 
     val isOnboardingCompleted by preferencesViewModel.isOnboardingCompleted.collectAsState()
+    val gameDisguiseEnabled by preferencesViewModel.gameDisguiseEnabled.collectAsState()
+    val gameDisguisePin by preferencesViewModel.gameDisguisePin.collectAsState()
 
     // Persistent ViewModels for Part 5
     val documentListViewModel: DocumentListViewModel = viewModel()
@@ -112,9 +116,27 @@ fun ScanovaNavGraph(
         ) {
             SplashScreen(
                 isOnboardingCompleted = isOnboardingCompleted ?: false,
+                isGameDisguiseEnabled = gameDisguiseEnabled,
                 onNavigateNext = { destination ->
                     navController.navigate(destination) {
                         popUpTo(Destinations.SPLASH) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Game Disguise Camouflage Route
+        composable(
+            route = Destinations.GAME_DISGUISE,
+            enterTransition = { fadeIn() },
+            exitTransition = { fadeOut() }
+        ) {
+            GameDisguiseScreen(
+                configuredPin = gameDisguisePin,
+                onUnlockApp = {
+                    val nextRoute = if (isOnboardingCompleted == true) Destinations.MAIN else Destinations.ONBOARDING
+                    navController.navigate(nextRoute) {
+                        popUpTo(Destinations.GAME_DISGUISE) { inclusive = true }
                     }
                 }
             )
@@ -157,6 +179,9 @@ fun ScanovaNavGraph(
                 onDocumentClick = { doc ->
                     selectedDocumentForDetail = doc
                     navController.navigate(Destinations.DOCUMENT_DETAIL)
+                },
+                onEnterGameDisguise = {
+                    navController.navigate(Destinations.GAME_DISGUISE)
                 }
             )
         }

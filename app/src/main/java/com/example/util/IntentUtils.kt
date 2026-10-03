@@ -25,10 +25,14 @@ object IntentUtils {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/pdf")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            val chooser = Intent.createChooser(intent, "Open PDF with").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            context.startActivity(intent)
+            context.startActivity(chooser)
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(context, "No PDF viewer installed.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {

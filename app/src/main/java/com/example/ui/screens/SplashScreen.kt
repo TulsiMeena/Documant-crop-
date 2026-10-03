@@ -28,23 +28,28 @@ import kotlinx.coroutines.delay
 @Composable
 fun SplashScreen(
     isOnboardingCompleted: Boolean,
+    isGameDisguiseEnabled: Boolean = false,
     onNavigateNext: (destination: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val alphaAnim = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        // Fade in logo and title
-        alphaAnim.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
-        )
-        // Hold for smooth branding experience
-        delay(600)
-        
-        // Route to Onboarding or Main
-        val route = if (isOnboardingCompleted) "main" else "onboarding"
-        onNavigateNext(route)
+        if (isGameDisguiseEnabled) {
+            onNavigateNext("game_disguise")
+        } else {
+            // Fade in logo and title
+            alphaAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
+            )
+            // Hold for smooth branding experience
+            delay(600)
+            
+            // Route to Onboarding or Main
+            val route = if (isOnboardingCompleted) "main" else "onboarding"
+            onNavigateNext(route)
+        }
     }
 
     Surface(

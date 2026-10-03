@@ -32,6 +32,7 @@ fun MainContainer(
     onOpenScanner: () -> Unit,
     onRevisitOnboarding: () -> Unit,
     onDocumentClick: (ScannedDocumentEntity) -> Unit,
+    onEnterGameDisguise: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(BottomTab.HOME) }
@@ -39,6 +40,8 @@ fun MainContainer(
     val appTheme by preferencesViewModel.appTheme.collectAsState()
     val defaultScanMode by preferencesViewModel.defaultScanMode.collectAsState()
     val autoCropEnabled by preferencesViewModel.autoCropEnabled.collectAsState()
+    val gameDisguiseEnabled by preferencesViewModel.gameDisguiseEnabled.collectAsState()
+    val gameDisguisePin by preferencesViewModel.gameDisguisePin.collectAsState()
 
     Scaffold(
         modifier = modifier
@@ -73,7 +76,9 @@ fun MainContainer(
                             onViewAllClick = {
                                 selectedTab = BottomTab.DOCUMENTS
                             },
-                            onDocumentClick = onDocumentClick
+                            onDocumentClick = onDocumentClick,
+                            gameDisguiseEnabled = gameDisguiseEnabled,
+                            onEnterGameDisguise = onEnterGameDisguise
                         )
                     }
 
@@ -96,7 +101,12 @@ fun MainContainer(
                             onScanModeChange = { preferencesViewModel.setDefaultScanMode(it) },
                             autoCropEnabled = autoCropEnabled,
                             onAutoCropChange = { preferencesViewModel.setAutoCropEnabled(it) },
-                            onResetOnboarding = onRevisitOnboarding
+                            onResetOnboarding = onRevisitOnboarding,
+                            gameDisguiseEnabled = gameDisguiseEnabled,
+                            onGameDisguiseChange = { preferencesViewModel.setGameDisguiseEnabled(it) },
+                            gameDisguisePin = gameDisguisePin,
+                            onGameDisguisePinChange = { preferencesViewModel.setGameDisguisePin(it) },
+                            onEnterGameDisguise = onEnterGameDisguise
                         )
                     }
                 }

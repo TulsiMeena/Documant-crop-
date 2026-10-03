@@ -36,6 +36,18 @@ class PreferencesViewModel(application: Application) : AndroidViewModel(applicat
         initialValue = true
     )
 
+    val gameDisguiseEnabled: StateFlow<Boolean> = repository.gameDisguiseEnabled.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val gameDisguisePin: StateFlow<String> = repository.gameDisguisePin.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
     fun setOnboardingCompleted(completed: Boolean) {
         viewModelScope.launch {
             repository.setOnboardingCompleted(completed)
@@ -57,6 +69,18 @@ class PreferencesViewModel(application: Application) : AndroidViewModel(applicat
     fun setAutoCropEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setAutoCropEnabled(enabled)
+        }
+    }
+
+    fun setGameDisguiseEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setGameDisguiseEnabled(enabled)
+        }
+    }
+
+    fun setGameDisguisePin(pin: String) {
+        viewModelScope.launch {
+            repository.setGameDisguisePin(pin)
         }
     }
 }

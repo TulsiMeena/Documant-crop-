@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
@@ -40,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,10 +65,14 @@ import com.example.ui.components.ScanovaOutlinedButton
 import com.example.ui.components.ScanovaPrimaryButton
 import com.example.ui.components.ScanovaTopBar
 import com.example.ui.components.SplitPdfDialog
+import com.example.ui.components.UnlockPdfDialog
 import com.example.ui.components.WatermarkSignatureDialog
 import com.example.ui.viewmodel.DocumentListViewModel
 import com.example.util.IntentUtils
 import com.example.util.PdfCompressor
+import com.example.util.PdfSecurityUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -91,13 +97,22 @@ fun DocumentDetailScreen(
     var showSavePdfDialog by remember { mutableStateOf(false) }
     var showEditPdfDialog by remember { mutableStateOf(false) }
     var showLockPdfDialog by remember { mutableStateOf(false) }
+    var showUnlockPdfDialog by remember { mutableStateOf(false) }
     var showWatermarkSignatureDialog by remember { mutableStateOf(false) }
     var showSplitPdfDialog by remember { mutableStateOf(false) }
 
     var currentPageCount by remember(document.pageCount) { mutableStateOf(document.pageCount) }
     var currentFileSizeBytes by remember(document.fileSizeBytes) { mutableStateOf(document.fileSizeBytes) }
+    var currentPdfPath by remember(document.pdfPath) { mutableStateOf(document.pdfPath) }
+    var isPdfLocked by remember { mutableStateOf(false) }
 
-    val pdfFile = remember(document.pdfPath) { File(document.pdfPath) }
+    LaunchedEffect(currentPdfPath) {
+        withContext(Dispatchers.IO) {
+            val f = File(currentPdfPath)
+            isPdfLocked = PdfSecurityUtil.isPdfEncrypted(context, f)
+        }
+    }
+
     val thumbnailBmp = remember(document.thumbnailPath) {
         try {
             BitmapFactory.decodeFile(document.thumbnailPath)
@@ -106,8 +121,8 @@ fun DocumentDetailScreen(
         }
     }
 
-    val fileSizeFormatted = remember(document.fileSizeBytes) {
-        val bytes = document.fileSizeBytes
+    val fileSizeFormatted = remember(currentFileSizeBytes) {
+        val bytes = currentFileSizeBytes
         when {
             bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024f * 1024f))
             bytes >= 1024 -> String.format("%.1f KB", bytes / 1024f)
@@ -116,18 +131,20 @@ fun DocumentDetailScreen(
     }
 
     fun openPdfFile() {
-        if (!pdfFile.exists()) {
+        val file = File(currentPdfPath)
+        if (!file.exists()) {
             showFileMissingDialog = true
         } else {
-            IntentUtils.openPdf(context, pdfFile)
+            IntentUtils.openPdf(context, file)
         }
     }
 
     fun sharePdfFile() {
-        if (!pdfFile.exists()) {
+        val file = File(currentPdfPath)
+        if (!file.exists()) {
             showFileMissingDialog = true
         } else {
-            IntentUtils.sharePdf(context, pdfFile, document.title)
+            IntentUtils.sharePdf(context, file, document.title)
         }
     }
 
@@ -212,6 +229,33 @@ fun DocumentDetailScreen(
                         )
                     }
 
+                    if (isPdfLocked) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(top = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Password Protected (128-bit Encrypted)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     // OCR Summary Card
@@ -279,7 +323,7 @@ fun DocumentDetailScreen(
                     ScanovaPrimaryButton(
                         text = "Save PDF to Phone (500KB, 1MB, 2MB)",
                         onClick = {
-                            if (!pdfFile.exists()) {
+                            if (!File(currentPdfPath).exists()) {
                                 showFileMissingDialog = true
                             } else {
                                 showSavePdfDialog = true
@@ -376,12 +420,21 @@ fun DocumentDetailScreen(
                                     icon = Icons.Default.Layers,
                                     modifier = Modifier.weight(1f)
                                 )
-                                ScanovaOutlinedButton(
-                                    text = "Lock PDF",
-                                    onClick = { showLockPdfDialog = true },
-                                    icon = Icons.Default.Lock,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                if (isPdfLocked) {
+                                    ScanovaOutlinedButton(
+                                        text = "Unlock PDF",
+                                        onClick = { showUnlockPdfDialog = true },
+                                        icon = Icons.Default.LockOpen,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                } else {
+                                    ScanovaOutlinedButton(
+                                        text = "Lock PDF",
+                                        onClick = { showLockPdfDialog = true },
+                                        icon = Icons.Default.Lock,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
 
                             Row(
@@ -529,9 +582,40 @@ fun DocumentDetailScreen(
     // Lock PDF with Password Protection
     if (showLockPdfDialog) {
         LockPdfDialog(
-            sourcePdfPath = document.pdfPath,
+            sourcePdfPath = currentPdfPath,
             documentTitle = document.title,
-            onDismiss = { showLockPdfDialog = false }
+            onDismiss = { showLockPdfDialog = false },
+            onSuccess = { lockedFile, replaceOriginal ->
+                if (replaceOriginal) {
+                    currentPdfPath = lockedFile.absolutePath
+                    currentFileSizeBytes = lockedFile.length()
+                    isPdfLocked = true
+                    viewModel.updateDocumentPdf(document, lockedFile.absolutePath, lockedFile.length())
+                } else {
+                    viewModel.addNewDocument(
+                        title = "${document.title} (Protected)",
+                        pdfPath = lockedFile.absolutePath,
+                        thumbnailPath = document.thumbnailPath,
+                        pageCount = currentPageCount,
+                        fileSizeBytes = lockedFile.length()
+                    )
+                }
+            }
+        )
+    }
+
+    // Unlock PDF (Decrypt) Dialog
+    if (showUnlockPdfDialog) {
+        UnlockPdfDialog(
+            sourcePdfPath = currentPdfPath,
+            documentTitle = document.title,
+            onDismiss = { showUnlockPdfDialog = false },
+            onSuccess = { unlockedFile ->
+                currentPdfPath = unlockedFile.absolutePath
+                currentFileSizeBytes = unlockedFile.length()
+                isPdfLocked = false
+                viewModel.updateDocumentPdf(document, unlockedFile.absolutePath, unlockedFile.length())
+            }
         )
     }
 

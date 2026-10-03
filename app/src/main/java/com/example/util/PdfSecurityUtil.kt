@@ -7,6 +7,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import java.io.File
+import java.util.UUID
 
 object PdfSecurityUtil {
 
@@ -21,8 +22,8 @@ object PdfSecurityUtil {
     }
 
     /**
-     * Encrypts and locks [sourcePdf] with [userPassword].
-     * The resulting PDF requires [userPassword] to open in any PDF viewer.
+     * Encrypts and locks [sourcePdf] with [password].
+     * The resulting PDF strictly requires [password] to open in any PDF viewer.
      */
     fun protectPdf(
         context: Context,
@@ -36,7 +37,13 @@ object PdfSecurityUtil {
             initPdfBox(context)
             val document = PDDocument.load(sourcePdf)
             val accessPermission = AccessPermission()
-            val protectionPolicy = StandardProtectionPolicy(password, password, accessPermission)
+            
+            // Standard PDF Security Specification:
+            // Owner password must NOT be equal to user password.
+            // When owner password is distinct and user password is the chosen password,
+            // opening the document in ANY PDF reader strictly prompts for user password.
+            val ownerPassword = "admin_${UUID.randomUUID()}"
+            val protectionPolicy = StandardProtectionPolicy(ownerPassword, password, accessPermission)
             protectionPolicy.encryptionKeyLength = 128
             protectionPolicy.permissions = accessPermission
 
@@ -66,4 +73,47 @@ object PdfSecurityUtil {
             true
         }
     }
+
+    /**
+     * Unlocks an encrypted PDF using [password] and writes unencrypted PDF to [outputFile].
+     */
+    fun unlockPdf(
+        context: Context,
+        sourcePdf: File,
+        password: String,
+        outputFile: File
+    ): Boolean {
+        if (!sourcePdf.exists()) return false
+        return try {
+            initPdfBox(context)
+            val document = PDDocument.load(sourcePdf, password)
+            document.isAllSecurityToBeRemoved = true
+            document.save(outputFile)
+            document.close()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unlocking PDF", e)
+            false
+        }
+    }
+
+    /**
+     * Verifies if [password] can successfully open the encrypted [sourcePdf].
+     */
+    fun verifyPassword(
+        context: Context,
+        sourcePdf: File,
+        password: String
+    ): Boolean {
+        if (!sourcePdf.exists()) return false
+        return try {
+            initPdfBox(context)
+            val document = PDDocument.load(sourcePdf, password)
+            document.close()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
+

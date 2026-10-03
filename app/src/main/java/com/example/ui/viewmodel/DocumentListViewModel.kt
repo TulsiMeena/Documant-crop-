@@ -96,6 +96,16 @@ class DocumentListViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun updateDocumentPdf(doc: ScannedDocumentEntity, newPdfPath: String, newSizeBytes: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = doc.copy(
+                pdfPath = newPdfPath,
+                fileSizeBytes = newSizeBytes
+            )
+            repository.updateDocument(updated)
+        }
+    }
+
     fun addNewDocument(
         title: String,
         pdfPath: String,
