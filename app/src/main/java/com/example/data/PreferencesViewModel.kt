@@ -3,14 +3,19 @@ package com.example.data
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class PreferencesViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = UserPreferencesRepository(application)
+
+    private val _isSessionUnlocked = MutableStateFlow(false)
+    val isSessionUnlocked: StateFlow<Boolean> = _isSessionUnlocked.asStateFlow()
 
     val isOnboardingCompleted: StateFlow<Boolean?> = repository.isOnboardingCompleted.stateIn(
         scope = viewModelScope,
@@ -82,5 +87,13 @@ class PreferencesViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             repository.setGameDisguisePin(pin)
         }
+    }
+
+    fun setSessionUnlocked(unlocked: Boolean) {
+        _isSessionUnlocked.value = unlocked
+    }
+
+    fun lockSession() {
+        _isSessionUnlocked.value = false
     }
 }

@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,10 +72,24 @@ fun ScanovaNavGraph(
     val isOnboardingCompleted by preferencesViewModel.isOnboardingCompleted.collectAsState()
     val gameDisguiseEnabled by preferencesViewModel.gameDisguiseEnabled.collectAsState()
     val gameDisguisePin by preferencesViewModel.gameDisguisePin.collectAsState()
+    val isSessionUnlocked by preferencesViewModel.isSessionUnlocked.collectAsState()
 
     // Persistent ViewModels for Part 5
     val documentListViewModel: DocumentListViewModel = viewModel()
     val documentSessionViewModel: DocumentSessionViewModel = viewModel()
+
+    // Enforce Game Disguise auto-relock: whenever app opens or was sent to background,
+    // if game disguise is ON and session is locked, immediately return to Game screen!
+    LaunchedEffect(gameDisguiseEnabled, isSessionUnlocked) {
+        if (gameDisguiseEnabled && !isSessionUnlocked) {
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (currentRoute != null && currentRoute != Destinations.GAME_DISGUISE && currentRoute != Destinations.SPLASH) {
+                navController.navigate(Destinations.GAME_DISGUISE) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+    }
 
     // Temporary storage for captured scan state between camera, crop, and enhance
     var capturedImagePath by remember { mutableStateOf<String?>(null) }
@@ -116,7 +131,7 @@ fun ScanovaNavGraph(
         ) {
             SplashScreen(
                 isOnboardingCompleted = isOnboardingCompleted ?: false,
-                isGameDisguiseEnabled = gameDisguiseEnabled,
+                isGameDisguiseEnabled = gameDisguiseEnabled && !isSessionUnlocked,
                 onNavigateNext = { destination ->
                     navController.navigate(destination) {
                         popUpTo(Destinations.SPLASH) { inclusive = true }
@@ -134,6 +149,7 @@ fun ScanovaNavGraph(
             GameDisguiseScreen(
                 configuredPin = gameDisguisePin,
                 onUnlockApp = {
+                    preferencesViewModel.setSessionUnlocked(true)
                     val nextRoute = if (isOnboardingCompleted == true) Destinations.MAIN else Destinations.ONBOARDING
                     navController.navigate(nextRoute) {
                         popUpTo(Destinations.GAME_DISGUISE) { inclusive = true }
@@ -181,7 +197,10 @@ fun ScanovaNavGraph(
                     navController.navigate(Destinations.DOCUMENT_DETAIL)
                 },
                 onEnterGameDisguise = {
-                    navController.navigate(Destinations.GAME_DISGUISE)
+                    preferencesViewModel.lockSession()
+                    navController.navigate(Destinations.GAME_DISGUISE) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }

@@ -57,6 +57,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Automatically re-lock into game mode camouflage whenever the app is sent to background
+        preferencesViewModel.lockSession()
+    }
+
     private fun triggerWelcomeNotification() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when {

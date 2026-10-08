@@ -1,5 +1,7 @@
 package com.example.ui.navigation
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.example.data.PreferencesViewModel
 import com.example.data.local.entity.ScannedDocumentEntity
@@ -35,6 +38,8 @@ fun MainContainer(
     onEnterGameDisguise: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
     var selectedTab by remember { mutableStateOf(BottomTab.HOME) }
 
     val appTheme by preferencesViewModel.appTheme.collectAsState()
@@ -42,6 +47,17 @@ fun MainContainer(
     val autoCropEnabled by preferencesViewModel.autoCropEnabled.collectAsState()
     val gameDisguiseEnabled by preferencesViewModel.gameDisguiseEnabled.collectAsState()
     val gameDisguisePin by preferencesViewModel.gameDisguisePin.collectAsState()
+
+    // If game disguise is active and user is on HOME tab, pressing Back locks session and minimizes app
+    BackHandler(enabled = selectedTab == BottomTab.HOME && gameDisguiseEnabled) {
+        preferencesViewModel.lockSession()
+        activity?.moveTaskToBack(true)
+    }
+
+    // If user is on DOCUMENTS or SETTINGS tab, pressing Back returns to HOME tab
+    BackHandler(enabled = selectedTab != BottomTab.HOME) {
+        selectedTab = BottomTab.HOME
+    }
 
     Scaffold(
         modifier = modifier
