@@ -47,6 +47,16 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[GAME_DISGUISE_PIN] ?: ""
     }
 
+    private val securityPrefs = context.getSharedPreferences("scanova_security_prefs", Context.MODE_PRIVATE)
+
+    fun isGameDisguiseEnabledSync(): Boolean {
+        return securityPrefs.getBoolean("game_disguise_enabled", false)
+    }
+
+    fun getGameDisguisePinSync(): String {
+        return securityPrefs.getString("game_disguise_pin", "") ?: ""
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[IS_ONBOARDING_COMPLETED] = completed
@@ -72,12 +82,14 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setGameDisguiseEnabled(enabled: Boolean) {
+        securityPrefs.edit().putBoolean("game_disguise_enabled", enabled).commit()
         context.dataStore.edit { preferences ->
             preferences[GAME_DISGUISE_ENABLED] = enabled
         }
     }
 
     suspend fun setGameDisguisePin(pin: String) {
+        securityPrefs.edit().putString("game_disguise_pin", pin).commit()
         context.dataStore.edit { preferences ->
             preferences[GAME_DISGUISE_PIN] = pin
         }

@@ -48,9 +48,10 @@ fun MainContainer(
     val gameDisguiseEnabled by preferencesViewModel.gameDisguiseEnabled.collectAsState()
     val gameDisguisePin by preferencesViewModel.gameDisguisePin.collectAsState()
 
-    // If game disguise is active and user is on HOME tab, pressing Back locks session and minimizes app
+    // If game disguise is active and user is on HOME tab, pressing Back locks session, switches to game, and minimizes app
     BackHandler(enabled = selectedTab == BottomTab.HOME && gameDisguiseEnabled) {
         preferencesViewModel.lockSession()
+        onEnterGameDisguise()
         activity?.moveTaskToBack(true)
     }
 

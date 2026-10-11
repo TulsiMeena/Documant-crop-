@@ -43,15 +43,19 @@ class PreferencesViewModel(application: Application) : AndroidViewModel(applicat
 
     val gameDisguiseEnabled: StateFlow<Boolean> = repository.gameDisguiseEnabled.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = false
+        started = SharingStarted.Eagerly,
+        initialValue = repository.isGameDisguiseEnabledSync()
     )
 
     val gameDisguisePin: StateFlow<String> = repository.gameDisguisePin.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = ""
+        started = SharingStarted.Eagerly,
+        initialValue = repository.getGameDisguisePinSync()
     )
+
+    fun isGameDisguiseInitiallyEnabled(): Boolean {
+        return repository.isGameDisguiseEnabledSync()
+    }
 
     fun setOnboardingCompleted(completed: Boolean) {
         viewModelScope.launch {

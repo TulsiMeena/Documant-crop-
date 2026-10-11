@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,6 +18,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -78,12 +81,37 @@ fun ScanovaNavGraph(
     val documentListViewModel: DocumentListViewModel = viewModel()
     val documentSessionViewModel: DocumentSessionViewModel = viewModel()
 
-    // Enforce Game Disguise auto-relock: whenever app opens or was sent to background,
-    // if game disguise is ON and session is locked, immediately return to Game screen!
+    val isInitiallyGameDisguised = remember { preferencesViewModel.isGameDisguiseInitiallyEnabled() }
+    val initialStartDestination = if (isInitiallyGameDisguised) Destinations.GAME_DISGUISE else Destinations.SPLASH
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // Observe App Lifecycle: when user leaves the app (to home screen or recents) and comes back,
+    // if game disguise is ON and session is not unlocked, immediately force display of the Game screen!
+    DisposableEffect(lifecycleOwner, gameDisguiseEnabled, isSessionUnlocked) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_START) {
+                if (gameDisguiseEnabled && !preferencesViewModel.isSessionUnlocked.value) {
+                    val currentRoute = navController.currentBackStackEntry?.destination?.route
+                    if (currentRoute != Destinations.GAME_DISGUISE) {
+                        navController.navigate(Destinations.GAME_DISGUISE) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Also enforce via LaunchedEffect for immediate state transitions within the composition
     LaunchedEffect(gameDisguiseEnabled, isSessionUnlocked) {
         if (gameDisguiseEnabled && !isSessionUnlocked) {
             val currentRoute = navController.currentBackStackEntry?.destination?.route
-            if (currentRoute != null && currentRoute != Destinations.GAME_DISGUISE && currentRoute != Destinations.SPLASH) {
+            if (currentRoute != Destinations.GAME_DISGUISE) {
                 navController.navigate(Destinations.GAME_DISGUISE) {
                     popUpTo(0) { inclusive = true }
                 }
@@ -120,7 +148,7 @@ fun ScanovaNavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = Destinations.SPLASH,
+        startDestination = initialStartDestination,
         modifier = modifier
     ) {
         // Splash Screen Route

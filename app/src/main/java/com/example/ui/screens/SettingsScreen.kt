@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -87,6 +88,11 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     var pinInputValue by remember(gameDisguisePin) { mutableStateOf(gameDisguisePin) }
     var isPinVisible by remember { mutableStateOf(false) }
+
+    // Dialog state for turning off Game Disguise with PIN
+    var showTurnOffPinDialog by remember { mutableStateOf(false) }
+    var turnOffPinInput by remember { mutableStateOf("") }
+    var turnOffPinError by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -315,7 +321,24 @@ fun SettingsScreen(
 
                             Switch(
                                 checked = gameDisguiseEnabled,
-                                onCheckedChange = onGameDisguiseChange,
+                                onCheckedChange = { isChecked ->
+                                    if (!isChecked) {
+                                        // User wants to turn OFF game disguise
+                                        if (gameDisguisePin.isNotBlank()) {
+                                            // Password required to disable!
+                                            turnOffPinInput = ""
+                                            turnOffPinError = false
+                                            showTurnOffPinDialog = true
+                                        } else {
+                                            onGameDisguiseChange(false)
+                                            Toast.makeText(context, "OX Game Mode disabled", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        // User turned ON game disguise
+                                        onGameDisguiseChange(true)
+                                        Toast.makeText(context, "OX Game Mode enabled. App will always launch as OX game.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                     checkedTrackColor = MaterialTheme.colorScheme.primary
@@ -363,9 +386,9 @@ fun SettingsScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Optional Master PIN
+                            // Master PIN
                             Text(
-                                text = "Optional Secret PIN (Leave blank for 1-tap open)",
+                                text = "Secret Password / PIN",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -378,7 +401,7 @@ fun SettingsScreen(
                                     pinInputValue = it.take(8)
                                     onGameDisguisePinChange(it.take(8))
                                 },
-                                label = { Text("Secret PIN (e.g. 1234 or empty)") },
+                                label = { Text("Secret PIN (e.g. 1234 or blank)") },
                                 placeholder = { Text("Leave blank for instant 1-click unlock") },
                                 singleLine = true,
                                 visualTransformation = if (isPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -404,6 +427,16 @@ fun SettingsScreen(
                                     .testTag("secret_pin_input")
                             )
 
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Crucial Persistence & Password Guarantee Note
+                            Text(
+                                text = "Jab tak aap yahan password daal kar is setting ko OFF nahi karenge, tab tak app ko jab bhi open karenge, hamesha OX Game hi khulega.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+
                             Spacer(modifier = Modifier.height(14.dp))
 
                             // Test / Enter Game Disguise Now Button
@@ -416,6 +449,89 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+
+                // Password Confirmation Dialog to Turn OFF Game Disguise
+                if (showTurnOffPinDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showTurnOffPinDialog = false
+                            turnOffPinError = false
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        title = {
+                            Text(
+                                text = "Enter Password to Turn Off",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Game Mode is protected by your secret PIN. Enter your PIN to turn off the game disguise. Until you turn it off with this password, the app will always open as the OX game.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                OutlinedTextField(
+                                    value = turnOffPinInput,
+                                    onValueChange = {
+                                        turnOffPinInput = it.take(8)
+                                        turnOffPinError = false
+                                    },
+                                    label = { Text("Secret PIN") },
+                                    placeholder = { Text("Enter your password") },
+                                    singleLine = true,
+                                    isError = turnOffPinError,
+                                    supportingText = {
+                                        if (turnOffPinError) {
+                                            Text(
+                                                text = "Incorrect password! Cannot turn off game mode.",
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("turn_off_pin_input")
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            ScanovaPrimaryButton(
+                                text = "Confirm & Turn Off",
+                                onClick = {
+                                    if (turnOffPinInput == gameDisguisePin) {
+                                        onGameDisguiseChange(false)
+                                        showTurnOffPinDialog = false
+                                        turnOffPinError = false
+                                        Toast.makeText(context, "Game disguise mode turned off successfully", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        turnOffPinError = true
+                                    }
+                                },
+                                modifier = Modifier.testTag("confirm_turn_off_button")
+                            )
+                        },
+                        dismissButton = {
+                            ScanovaOutlinedButton(
+                                text = "Cancel",
+                                onClick = {
+                                    showTurnOffPinDialog = false
+                                    turnOffPinError = false
+                                },
+                                modifier = Modifier.testTag("cancel_turn_off_button")
+                            )
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

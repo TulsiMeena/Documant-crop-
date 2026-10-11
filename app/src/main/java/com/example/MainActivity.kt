@@ -57,6 +57,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Immediately re-lock game disguise session as soon as app starts losing focus
+        preferencesViewModel.lockSession()
+    }
+
     override fun onStop() {
         super.onStop()
         // Automatically re-lock into game mode camouflage whenever the app is sent to background
